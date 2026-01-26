@@ -1,0 +1,51 @@
+{
+  "name": "laf",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@arcgis/core": "^4.33.12",
+    "@deck.gl/arcgis": "^9.1.14",
+    "@deck.gl/carto": "^9.1.14",
+    "@deck.gl/core": "^9.1.14",
+    "@deck.gl/geo-layers": "^9.1.14",
+    "@deck.gl/layers": "^9.1.14",
+    "@deck.gl/mapbox": "^9.1.14",
+    "@deck.gl/react": "^9.1.14",
+    "@deck.gl/widgets": "^9.1.14",
+    "@loaders.gl/3d-tiles": "^4.3.4",
+    "@loaders.gl/images": "^4.3.4",
+    "@tailwindcss/vite": "^4.1.14",
+    "@turf/turf": "^7.2.0",
+    "arcgis-js-api": "^4.31.6",
+    "deck.gl": "^9.1.14",
+    "maplibre-gl": "^5.7.0",
+    "papaparse": "^5.4.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-leaflet": "^5.0.0",
+    "react-map-gl": "^5.3.21",
+    "request": "^2.88.2",
+    "tailwindcss": "^4.1.14"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "@types/arcgis-js-api": "^4.28.4",
+    "@types/papaparse": "^5.3.16",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^9.33.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.39.1",
+    "vite": "^7.1.2"
+  }
+}

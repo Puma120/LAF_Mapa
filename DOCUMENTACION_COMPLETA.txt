@@ -1,0 +1,1537 @@
+# DOCUMENTACIÓN COMPLETA DEL PROYECTO LAF
+## Sistema Interactivo de Visualización de Fosas Clandestinas y Masacres en México
+
+===============================================================================
+TABLA DE CONTENIDOS
+===============================================================================
+1. Resumen Ejecutivo
+2. Guía de Instalación y Ejecución
+3. Arquitectura del Sistema
+4. Estructura de Directorios
+5. Formato de Datos CSV
+6. Componentes del Sistema
+7. Capas de Visualización (Layers)
+8. Hooks de Datos
+9. Flujo de Datos
+10. Funcionalidades Principales
+11. Estilos y UI/UX
+12. Tecnologías Utilizadas
+13. Optimizaciones y Rendimiento
+14. Troubleshooting
+15. Mantenimiento y Actualización de Datos
+
+===============================================================================
+1. RESUMEN EJECUTIVO
+===============================================================================
+
+El proyecto LAF es una aplicación web interactiva desarrollada en React con TypeScript 
+que permite la visualización geoespacial de fosas clandestinas y masacres en México. 
+Utiliza deck.gl para renderizado de mapas 3D/2D de alto rendimiento, integrando datos 
+desde archivos CSV con coordenadas geográficas.
+
+CARACTERÍSTICAS PRINCIPALES:
+- Visualización interactiva de ~80 fosas clandestinas y ~1000 masacres
+- Mapas base múltiples (satélite, topográfico, OSM, CartoDB)
+- Vista 2D y 3D con terreno elevado
+- Sistema de filtros avanzado (municipio, zona, modalidad, año, búsqueda)
+- Línea de tiempo interactiva con modos de animación
+- Popups informativos con detalles de cada incidente
+- Panel de filtros colapsable
+- Leyendas dinámicas
+- Polígonos de convex hull por modalidad
+
+===============================================================================
+2. GUÍA DE INSTALACIÓN Y EJECUCIÓN
+===============================================================================
+
+REQUISITOS PREVIOS:
+- Node.js versión 20.19+ o 22.12+ (el proyecto usa Node.js 20.17.0 pero Vite 
+  recomienda actualizar)
+- npm (incluido con Node.js)
+- Navegador moderno (Chrome, Firefox, Edge, Safari)
+
+PASOS DE INSTALACIÓN:
+
+1. Clonar o descargar el repositorio:
+   git clone https://github.com/Inigo1405/LAF.git
+   cd LAF
+
+2. Instalar dependencias:
+   npm install
+
+   Esto instalará todas las librerías listadas en package.json, incluyendo:
+   - React 19.1.1
+   - deck.gl 9.1.14
+   - papaparse 5.4.1
+   - tailwindcss 4.1.14
+   - TypeScript 5.8.3
+   - Vite 7.1.2
+
+3. Verificar que los archivos CSV estén en src/assets/:
+   - Fosas_clandestinas_2.csv
+   - Base de Datos - Masacres (1).csv
+
+4. Ejecutar en modo desarrollo:
+   npm run dev
+
+   Esto iniciará el servidor de desarrollo de Vite en:
+   http://localhost:5173
+
+5. Para compilar para producción:
+   npm run build
+
+   Los archivos compilados se generarán en la carpeta dist/
+
+6. Para ejecutar el linter:
+   npm run lint
+
+NOTAS IMPORTANTES:
+- El primer inicio puede tardar mientras se cargan los datos CSV (~1-2 segundos)
+- Se requiere conexión a internet para cargar los mapas base
+- El modo 3D requiere mayor capacidad de procesamiento gráfico
+
+===============================================================================
+3. ARQUITECTURA DEL SISTEMA
+===============================================================================
+
+El sistema sigue una arquitectura de componentes React con separación de 
+responsabilidades:
+
+CAPAS DE LA ARQUITECTURA:
+
+1. CAPA DE PRESENTACIÓN (Components):
+   - Componentes de UI reutilizables
+   - Manejo de eventos de usuario
+   - Renderizado condicional
+
+2. CAPA DE LÓGICA DE NEGOCIO (Hooks):
+   - Carga y parseo de datos CSV
+   - Transformación de coordenadas
+   - Estado de la aplicación
+
+3. CAPA DE VISUALIZACIÓN (Layers):
+   - Renderizado de puntos geoespaciales
+   - Polígonos de modalidad
+   - Configuración de deck.gl
+
+4. CAPA DE DATOS (Assets):
+   - Archivos CSV con datos crudos
+   - Imágenes y recursos estáticos
+
+FLUJO DE DATOS:
+CSV → Hooks (parseo) → Estado React → Filtros → Layers → deck.gl → Renderizado
+
+PATRÓN DE DISEÑO:
+- Hooks personalizados para lógica de datos
+- Componentes controlados con props
+- Estado unificado en App.tsx
+- Memoización para optimización
+
+===============================================================================
+4. ESTRUCTURA DE DIRECTORIOS
+===============================================================================
+
+LAF/
+├── .git/                           # Control de versiones Git
+├── .gitignore                      # Archivos ignorados por Git
+├── .vscode/                        # Configuración de VS Code
+├── dist/                           # Archivos compilados (generados)
+├── node_modules/                   # Dependencias instaladas
+├── public/                         # Recursos públicos estáticos
+├── src/                            # Código fuente principal
+│   ├── App.tsx                     # Componente raíz, orquestador
+│   ├── main.tsx                    # Punto de entrada React
+│   ├── index.css                   # Estilos globales
+│   ├── vite-env.d.ts              # Tipos de Vite
+│   │
+│   ├── assets/                     # Recursos estáticos
+│   │   ├── Fosas_clandestinas_2.csv          # Dataset de fosas
+│   │   ├── Base de Datos - Masacres (1).csv # Dataset de masacres
+│   │   ├── Logo-LAF-Blanco.png               # Logo LAF (blanco)
+│   │   ├── Logo-Ibero.png                    # Logo IBERO Puebla
+│   │   └── Logo-LAF-Negro.png                # Logo LAF (negro)
+│   │
+│   ├── components/                 # Componentes React
+│   │   ├── Compass.tsx                       # Brújula de orientación
+│   │   ├── FilterPanel.tsx                   # Panel de filtros (legacy)
+│   │   ├── FosaPopup.tsx                     # Popup de fosas
+│   │   ├── MasacrePopup.tsx                  # Popup de masacres
+│   │   ├── ModalidadLegend.tsx               # Leyenda de modalidades
+│   │   ├── Timeline.tsx                      # Línea de tiempo interactiva
+│   │   └── UnifiedFilterPanel.tsx            # Panel unificado (actual)
+│   │
+│   ├── hooks/                      # Hooks personalizados
+│   │   ├── useFosasData.ts                   # Hook para cargar fosas
+│   │   └── useMasacresData.ts                # Hook para cargar masacres
+│   │
+│   └── layers/                     # Capas de deck.gl
+│       ├── FosasLayer.ts                     # Capa de visualización fosas
+│       └── MasacresLayer.ts                  # Capa de visualización masacres
+│
+├── eslint.config.js                # Configuración ESLint
+├── index.html                      # HTML base
+├── package.json                    # Dependencias y scripts
+├── package-lock.json               # Lockfile de npm
+├── README.md                       # Documentación básica
+├── tsconfig.json                   # Configuración TypeScript
+├── tsconfig.app.json              # Config TS para app
+├── tsconfig.node.json             # Config TS para Node
+└── vite.config.ts                 # Configuración Vite
+
+DESCRIPCIÓN DE ARCHIVOS CLAVE:
+
+- App.tsx (602 líneas): Componente principal que maneja estado global, 
+  integración de capas, filtros, timeline y eventos de interacción.
+
+- UnifiedFilterPanel.tsx (635 líneas): Panel colapsable con filtros 
+  independientes para fosas y masacres, pestañas de resultados.
+
+- Timeline.tsx (518 líneas): Línea de tiempo con 4 modos (todos, custom, 
+  animación, individual), drag & drop, y controles de velocidad.
+
+- useFosasData.ts (106 líneas): Hook que carga CSV de fosas, parsea 
+  coordenadas en múltiples formatos (decimal, DMS, etc.).
+
+- FosasLayer.ts (236 líneas): Crea ScatterplotLayer y PolygonLayer, 
+  implementa convex hull para polígonos de modalidad.
+
+===============================================================================
+5. FORMATO DE DATOS CSV
+===============================================================================
+
+5.1 FOSAS CLANDESTINAS (Fosas_clandestinas_2.csv)
+
+COLUMNAS REQUERIDAS:
+- Coord_X: Longitud (formatos aceptados: decimal, DMS, grados con hemisferio)
+- Coord_Y: Latitud (formatos aceptados: decimal, DMS, grados con hemisferio)
+
+COLUMNAS OPCIONALES PERO RECOMENDADAS:
+- CASO: Identificador único del caso
+- FECHA DEL HALLAZGO: Fecha en formato ISO o texto
+- AÑO: Año del hallazgo (número o texto)
+- MUNUCUPIO / MUNICIPIO / Municipio: Nombre del municipio
+- ZONA: Descripción de la zona (ej: "Calle...", "Junta auxiliar...")
+- CUERPOS ENCONTRADOS: Descripción de víctimas
+- MODALIDAD DE FOSA / MODALIDAD: Tipo de fosa (Primaria, Secundaria, etc.)
+- CARACTERÍSTICAS DEL SITIO DE HALLAZGO: Descripción del sitio
+- QUIÉN HIZO EL HALLAZGO: Actor que descubrió la fosa
+- DESCRIPCIÓN: Narrativa completa del caso
+
+FORMATOS DE COORDENADAS ACEPTADOS:
+1. Decimal: 19.0416, -97.9473
+2. Grados con hemisferio: 19.0416N, 97.9473W
+3. DMS (Grados Minutos Segundos): 19°02'29.76"N, 97°56'50.28"W
+4. DMS con puntos: 19.02.29.76
+
+EJEMPLO DE FILA VÁLIDA:
+CASO,FECHA DEL HALLAZGO,AÑO,MUNUCUPIO,ZONA,Coord_Y,Coord_X,CUERPOS ENCONTRADOS,MODALIDAD DE FOSA,QUIÉN HIZO EL HALLAZGO,DESCRIPCIÓN
+1.0,2012-01-27,2012.0,Tzicatlacoyan,"Calle 16 de septiembre",18.7997633,97.9877249,"3 mujeres",Sendero rural,Autoridades,"Descripción del hallazgo..."
+
+VALIDACIONES:
+- Coordenadas deben estar en rangos válidos: Latitud [-90, 90], Longitud [-180, 180]
+- Año debe ser entre 1900 y 2100
+- Municipio no puede estar vacío para filtros efectivos
+
+5.2 MASACRES (Base de Datos - Masacres (1).csv)
+
+COLUMNAS REQUERIDAS:
+- coord_x: Longitud en formato decimal
+- coord_y: Latitud en formato decimal
+
+COLUMNAS OPCIONALES PERO RECOMENDADAS:
+- ID: Identificador único
+- Municipio / MUNICIPIO: Nombre del municipio
+- Número: Número de identificación (ej: "7/23")
+- Links: URLs de referencias
+- Descripción resumida: Resumen del incidente
+- año: Año del evento
+- fecha: Fecha completa del evento
+- LUGAR: Ubicación específica
+
+EJEMPLO DE FILA VÁLIDA:
+ID,Municipio,Número,Links,Descripción resumida,año,fecha,coord_x,coord_y
+1,Acajete,7/23,"https://...",Los cuerpos de dos personas...,2023,04/07/2023,-97.9473473,19.04164695
+
+NOTAS IMPORTANTES:
+- Las coordenadas deben ser números decimales válidos
+- coord_x es negativo en el hemisferio oeste (México)
+- coord_y es positivo en el hemisferio norte
+- Si coord_x o coord_y es 0 o inválido, el registro se omite
+
+5.3 PREPROCESAMIENTO DE DATOS
+
+Los datos CSV deben limpiarse antes de integrarlos:
+
+1. Eliminar duplicados por coordenadas
+2. Estandarizar nombres de municipios (mayúsculas/minúsculas)
+3. Validar formato de fechas
+4. Corregir coordenadas erróneas (invertidas, fuera de rango)
+5. Completar campos vacíos críticos
+6. Normalizar modalidades de fosa
+
+HERRAMIENTAS RECOMENDADAS:
+- Python con pandas para limpieza
+- OpenRefine para normalización
+- QGIS para validación geográfica
+
+===============================================================================
+6. COMPONENTES DEL SISTEMA
+===============================================================================
+
+6.1 APP.TSX - COMPONENTE RAÍZ (602 líneas)
+
+RESPONSABILIDADES:
+- Orquestación general de la aplicación
+- Gestión de estado global (filtros, vista, modo 3D)
+- Integración de capas de deck.gl
+- Manejo de eventos de click en el mapa
+- Transiciones de cámara (fly-to)
+- Renderizado condicional de popups
+
+ESTADO PRINCIPAL:
+- mapStyle: Índice del mapa base actual (0-6)
+- viewState: {longitude, latitude, zoom, bearing, pitch}
+- selectedFeature: Fosa o masacre seleccionada
+- filters: UnifiedFilters (todos los filtros activos)
+- is3D: Booleano para modo 3D/2D
+- yearRange: Rango de años seleccionado [min, max]
+- isPanelCollapsed: Estado del panel de filtros
+
+FUNCIONES CLAVE:
+- onChangeMap(): Cicla entre mapas base
+- filteredFosas: useMemo que filtra fosas según criterios activos
+- filteredMasacres: useMemo que filtra masacres
+- allYears: useMemo que combina años de ambos datasets
+- onClick handler: Maneja clicks en puntos, zoom y selección
+
+MAPAS BASE DISPONIBLES:
+1. World Imagery (ESRI satélite)
+2. CartoDB Light
+3. CartoDB Voyager
+4. World Topo Map (ESRI)
+5. OpenStreetMap
+6. CartoDB Dark
+7. Hipsográfico personalizado (API LAF)
+
+INTEGRACIONES:
+- DeckGL con controller para interacción
+- UnifiedFilterPanel para filtros
+- Timeline para control temporal
+- FosaPopup y MasacrePopup para información
+- Compass para orientación
+- ModalidadLegend para polígonos
+
+6.2 UNIFIEDFILTERPANEL.TSX - PANEL DE FILTROS (635 líneas)
+
+RESPONSABILIDADES:
+- Interfaz de filtrado independiente para fosas y masacres
+- Checkboxes para mostrar/ocultar datasets
+- Filtros específicos por tipo de dato
+- Resultados scrolleables con pestañas
+- Estado colapsable con callback
+
+ESTADO:
+- activeTab: 'fosas' | 'masacres'
+- collapsed: booleano para colapsar panel
+
+FILTROS DE FOSAS:
+- Municipio (multi-select con scroll)
+- Zona (multi-select con scroll)
+- Modalidad de fosa (checkboxes)
+- Quién hizo el hallazgo (checkboxes)
+- Búsqueda de texto
+
+FILTROS DE MASACRES:
+- Municipio (multi-select con scroll)
+- Búsqueda de texto
+
+COMPORTAMIENTO DINÁMICO:
+- Si solo fosas seleccionadas: muestra filtros de fosas
+- Si solo masacres seleccionadas: muestra filtros de masacres
+- Si ambos seleccionados: muestra filtros de fosas (más completos)
+- Municipios son específicos de cada dataset (no se mezclan)
+
+PESTAÑAS DE RESULTADOS:
+- Fosas: Lista con municipio, año, zona
+- Masacres: Lista con municipio, fecha
+- Click en item hace zoom y selecciona
+
+COLAPSADO:
+- Botón con ícono de filtro (tres líneas)
+- Tamaño colapsado: 50x50px
+- Posición: bottom-left alineado con botones de control
+- Notifica cambio a App.tsx via onCollapsedChange
+
+ESTILOS:
+- Fondo blanco con sombra
+- Scrollbars personalizados
+- Transiciones suaves (0.3s)
+- Tema azul para fosas, púrpura para masacres
+
+6.3 TIMELINE.TSX - LÍNEA DE TIEMPO (518 líneas)
+
+RESPONSABILIDADES:
+- Selección de rango temporal
+- Animación automática por años
+- 4 modos de operación
+- Controles de velocidad
+
+MODOS:
+
+1. ALL (Todos):
+   - Muestra todos los años disponibles
+   - Sin restricción temporal
+
+2. CUSTOM (Personalizado):
+   - Dos handles arrastrables (min, max)
+   - Drag de rango completo
+   - Selección manual de años
+
+3. ANIMATION (Animación):
+   - Avanza automáticamente año por año
+   - Controles play/pause
+   - Selector de velocidad (200ms - 1500ms)
+   - Loop automático al final
+
+4. INDIVIDUAL (Individual):
+   - Un solo handle
+   - Selecciona un año específico
+   - Útil para análisis puntual
+
+INTERACCIONES:
+- Click en track: salta a ese año (modo individual)
+- Drag de handles: ajusta rango
+- Drag de barra entre handles: mueve rango completo
+- Botones de modo: cambia comportamiento
+
+VISUALIZACIÓN:
+- Barras verticales por año (altura = frecuencia)
+- Color: azul para fosas, púrpura para masacres
+- Handles circulares con año visible
+- Barra de selección semi-transparente
+
+INFORMACIÓN:
+- Contador de períodos seleccionados
+- Total de fosas en rango
+- Total de masacres en rango
+
+OPTIMIZACIONES:
+- useMemo para años ordenados
+- useCallback para handlers
+- requestAnimationFrame para animaciones
+- Cleanup de timers en useEffect
+
+6.4 FOSAPOPUP.TSX - POPUP DE FOSAS
+
+RESPONSABILIDADES:
+- Mostrar detalles de fosa seleccionada
+- Posicionamiento centrado en pantalla
+- Cierre con Escape o click en X
+
+INFORMACIÓN MOSTRADA:
+- Municipio
+- Zona/ubicación
+- Fecha de hallazgo
+- Año
+- Cuerpos encontrados
+- Modalidad de fosa
+- Características del sitio
+- Quién hizo el hallazgo
+- Descripción completa
+- Enlaces (si existen)
+
+POSICIONAMIENTO:
+- position: fixed
+- left: 50%, top: 50%
+- transform: translate(-50%, -50%)
+- z-index: 10000
+
+ESTILOS:
+- Fondo blanco con sombra
+- Máximo 80% del viewport
+- Scroll interno si es necesario
+- Botón X en esquina superior derecha
+- Tema rojo para fosas
+
+6.5 MASACREPOPUP.TSX - POPUP DE MASACRES
+
+Similar a FosaPopup pero con:
+- Información específica de masacres
+- Posición: right: 20px, top: 120px
+- Tema púrpura
+- Campos: Municipio, Fecha, Lugar, Descripción, Links
+
+6.6 COMPASS.TSX - BRÚJULA
+
+RESPONSABILIDADES:
+- Mostrar orientación del mapa (bearing)
+- Reset de orientación a norte
+
+VISUALIZACIÓN:
+- Círculo con flecha indicando norte
+- Rotación según bearing actual
+- Click resetea bearing a 0°
+
+6.7 MODALIDADLEGEND.TSX - LEYENDA DE MODALIDADES
+
+RESPONSABILIDADES:
+- Mostrar colores de polígonos por modalidad
+- Visible solo cuando hay filtros de modalidad
+
+INFORMACIÓN:
+- Nombre de modalidad
+- Color correspondiente
+- Cantidad de fosas de esa modalidad
+
+POSICIONAMIENTO:
+- Esquina inferior derecha
+- Fondo blanco con sombra
+
+===============================================================================
+7. CAPAS DE VISUALIZACIÓN (LAYERS)
+===============================================================================
+
+7.1 FOSALAYER.TS - CAPA DE FOSAS
+
+FUNCIÓN: createFosasLayer(fosas: FosaRecord[]): ScatterplotLayer
+
+CONFIGURACIÓN:
+- id: 'fosas-circle-layer'
+- getPosition: [lon, lat] desde fosa.position
+- getFillColor: [220, 38, 38, 200] (rojo)
+- getLineColor: [153, 27, 27, 255] (rojo oscuro)
+- radiusMinPixels: 8
+- lineWidthMinPixels: 2
+- stroked: true
+- filled: true
+- pickable: true
+
+DATOS:
+- Recibe array de FosaRecord filtrados
+- Cada registro tiene position [lon, lat] y raw (datos originales)
+
+OPTIMIZACIONES:
+- updateTriggers: data (solo re-renderiza si cambian los datos)
+- autoHighlight: true (resalta al hover)
+
+7.2 MASACRESLAYER.TS - CAPA DE MASACRES
+
+FUNCIÓN: createMasacresLayer(masacres: MasacreRecord[]): ScatterplotLayer
+
+CONFIGURACIÓN:
+- id: 'masacres-circle-layer'
+- getPosition: [lon, lat] desde masacre.position
+- getFillColor: [155, 89, 182, 220] (púrpura)
+- getLineColor: [75, 0, 130, 255] (púrpura oscuro)
+- radiusMinPixels: 7
+- lineWidthMinPixels: 2
+- stroked: true
+- filled: true
+- pickable: true
+
+DIFERENCIAS CON FOSAS:
+- Radio ligeramente menor (7 vs 8 px)
+- Color púrpura distintivo
+- Mayor transparencia (220 vs 200)
+
+7.3 POLÍGONOS DE MODALIDAD (FosasLayer.ts)
+
+FUNCIÓN: createModalidadPolygons(fosas: FosaRecord[]): PolygonLayer | null
+
+ALGORITMO CONVEX HULL:
+- Implementación: Gift Wrapping (Jarvis March)
+- Complejidad: O(nh) donde n=puntos, h=puntos en hull
+- Agrupa fosas por modalidad
+- Calcula envolvente convexa para cada grupo
+- Requiere mínimo 3 puntos por modalidad
+
+COLORES POR MODALIDAD:
+- PRIMARIA: Rojo vibrante [231, 76, 60, 160]
+- SECUNDARIA: Azul brillante [52, 152, 219, 160]
+- TERCIARIA: Verde esmeralda [46, 204, 113, 160]
+- CUATERNARIA: Amarillo dorado [241, 196, 15, 160]
+- MÚLTIPLE: Púrpura [155, 89, 182, 160]
+- INDIVIDUAL: Naranja [230, 126, 34, 160]
+- COLECTIVA: Turquesa [26, 188, 156, 160]
+- POZO PARA RIEGO: Azul [49, 130, 206, 160]
+- DEFAULT: Gris azulado [149, 165, 166, 140]
+
+CONFIGURACIÓN DEL POLYGONLAYER:
+- id: 'modalidad-polygons'
+- filled: true
+- stroked: true
+- lineWidthMinPixels: 2
+- opacity: 0.3
+- pickable: false
+
+FUNCIÓN AUXILIAR: getModalidadesWithColors()
+- Extrae modalidades únicas de fosas filtradas
+- Asigna color apropiado según MODALIDAD_COLORS
+- Retorna array con modalidad, color y conteo
+- Usado para generar ModalidadLegend
+
+===============================================================================
+8. HOOKS DE DATOS
+===============================================================================
+
+8.1 USEFOSASDATA.TS
+
+TIPO DE RETORNO:
+export type FosaRecord = {
+  position: [number, number]; // [lon, lat]
+  raw: Record<string, any>;   // Datos originales del CSV
+};
+
+FUNCIÓN PRINCIPAL: useFosasData()
+
+FLUJO:
+1. useEffect se ejecuta una vez al montar
+2. Construye URL del CSV usando import.meta.url
+3. Papa.parse carga y parsea el CSV
+4. Por cada fila:
+   a. Extrae Coord_X y Coord_Y
+   b. Llama parseCoord() para convertir a decimal
+   c. Valida coordenadas (finitas y en rango México)
+   d. Crea FosaRecord con position y raw
+5. setFosas actualiza estado
+6. Manejo de errores con console.error
+
+FUNCIÓN PARSECOORD(value: unknown): number | undefined
+
+FORMATOS SOPORTADOS:
+
+1. DECIMAL SIMPLE:
+   Input: "19.0416"
+   Output: 19.0416
+
+2. DECIMAL CON ESPACIOS:
+   Input: "  19. 041 6  "
+   Output: 19.0416 (espacios removidos)
+
+3. GRADOS CON HEMISFERIO:
+   Input: "19.0416N" o "97.9473W"
+   Output: 19.0416 o -97.9473 (W y S se vuelven negativos)
+
+4. DMS (Grados Minutos Segundos):
+   Input: "19°02'29.76\"N"
+   Regex: /^(\d{1,3})°(\d{1,2})'(\d{1,2}(?:\.\d+)?)"?([NSEW])$/i
+   Cálculo: degrees + minutes/60 + seconds/3600
+   Output: 19.0416 (con ajuste de hemisferio)
+
+5. DMS CON PUNTOS:
+   Input: "19.02.29.76"
+   Regex: /^(\d{1,3})\.(\d{1,2})\.(\d{1,2}(?:\.\d+)?)$/
+   Output: 19.0416
+
+VALIDACIONES:
+- Verifica que números sean finitos
+- Ajusta signo según hemisferio (S y W = negativo)
+- Retorna undefined si no puede parsear
+
+CASOS ESPECIALES:
+- Valores null/undefined: retorna undefined
+- Strings vacíos: retorna undefined
+- Formatos inválidos: retorna undefined
+
+OPTIMIZACIÓN:
+- useRef para evitar recargas innecesarias
+- skipEmptyLines en Papa.parse
+- header: true para acceso por nombre de columna
+
+8.2 USEMASACRESDATA.TS
+
+Similar a useFosasData pero más simple:
+
+FUNCIÓN PARSECOORD:
+- Solo maneja formato decimal
+- parseFloat directo
+- Retorna 0 si inválido (en vez de undefined)
+
+VALIDACIÓN:
+- Omite registros donde coord_x === 0 o coord_y === 0
+- No valida rangos específicos
+
+DIFERENCIAS CLAVE:
+- Fosas: parseCoord más robusto (múltiples formatos)
+- Masacres: parseCoord simple (solo decimal)
+- Fosas: skipea coordenadas inválidas
+- Masacres: skipea coordenadas cero
+
+CSV SOURCE:
+- Archivo: "Base de Datos - Masacres (1).csv"
+- Tamaño: ~1085 filas
+- Columnas clave: ID, Municipio, año, fecha, coord_x, coord_y
+
+===============================================================================
+9. FLUJO DE DATOS
+===============================================================================
+
+9.1 INICIALIZACIÓN
+
+1. main.tsx renderiza <Root /> (App.tsx)
+2. App.tsx ejecuta:
+   - useFosasData() → carga Fosas_clandestinas_2.csv
+   - useMasacresData() → carga Base de Datos - Masacres (1).csv
+3. Papa.parse descarga y parsea CSVs
+4. Hooks setean estado con arrays de registros
+5. App.tsx calcula allYears (años únicos combinados)
+6. yearRange se inicializa con [minYear, maxYear]
+
+9.2 FILTRADO
+
+TRIGGER: Usuario cambia filtros en UnifiedFilterPanel
+FLUJO:
+1. onChange callback actualiza filters en App.tsx
+2. useMemo de filteredFosas se recalcula:
+   - Extrae año de cada fosa
+   - Verifica si coincide con filters.anio
+   - Verifica municipio, zona, modalidad, hallazgo, texto
+   - Retorna solo fosas que pasan todos los filtros
+3. useMemo de filteredMasacres se recalcula:
+   - Similar pero con campos de masacres
+4. UnifiedFilterPanel recibe nuevos filteredFosas y filteredMasacres
+5. Timeline recibe totalFosas y totalMasacres actualizados
+6. Layers reciben arrays filtrados
+7. deck.gl re-renderiza capas
+
+9.3 SELECCIÓN DE AÑO (TIMELINE)
+
+TRIGGER: Usuario ajusta handles o inicia animación
+FLUJO:
+1. Timeline.onChange(min, max) se llama
+2. App.tsx actualiza yearRange
+3. useEffect detecta cambio en yearRange
+4. Calcula selectedYears = años entre min y max
+5. Actualiza filters.anio con selectedYears
+6. Desencadena flujo de filtrado (9.2)
+
+9.4 CLICK EN PUNTO
+
+TRIGGER: Usuario hace click en fosa o masacre
+FLUJO:
+1. deck.gl detecta click, info.object contiene el registro
+2. App.tsx onClick handler verifica info.layer.id
+3. Si es 'fosas-circle-layer':
+   a. Extrae feature.position [lon, lat]
+   b. Valida coordenadas finitas
+   c. setViewState con FlyToInterpolator
+   d. setSelectedFeature({ type: 'fosa', rec: feature })
+4. Si es 'masacres-circle-layer':
+   a. Similar pero type: 'masacre'
+5. WebMercatorViewport proyecta coordenadas a píxeles
+6. FosaPopup o MasacrePopup se renderiza en posición
+
+9.5 COLAPSAR PANEL
+
+TRIGGER: Usuario hace click en botón de colapsar
+FLUJO:
+1. UnifiedFilterPanel.handleCollapsedChange(!collapsed)
+2. setCollapsed actualiza estado local
+3. onCollapsedChange?(collapsed) llama callback
+4. App.tsx.setIsPanelCollapsed(collapsed)
+5. CSS aplica transiciones:
+   - Panel: width 280px → 50px
+   - Logo LAF: left 328px → 80px
+   - Leyenda: left 328px → 80px
+   - Botones: left 328px → 80px
+6. Transiciones CSS duran 0.3s
+
+===============================================================================
+10. FUNCIONALIDADES PRINCIPALES
+===============================================================================
+
+10.1 VISUALIZACIÓN DE MAPAS
+
+MAPAS BASE:
+- 7 estilos de mapa disponibles
+- Cambio con botón "Cambiar mapa"
+- Fuentes: ESRI, CartoDB, OSM, API personalizada
+
+MODO 2D:
+- pitch: 0
+- Scroll zoom optimizado
+- Mapas base como TileLayer
+
+MODO 3D:
+- pitch: 45
+- TerrainLayer con elevación real
+- Fuente de elevación: pingul-maps.hf.space
+- Decoder para interpretar RGB como altura
+- Vista centrada en Puebla (19.041, -98.206)
+
+INTERACCIONES:
+- Pan: arrastrar con mouse/touch
+- Zoom: scroll o pinch
+- Rotate: Ctrl + arrastrar o dos dedos
+- Pitch: Shift + arrastrar
+
+CONTROLES:
+- Botón "Inicio": reset a vista inicial
+- Brújula: reset de rotación
+- Botón "Ver en 3D/2D": toggle modo
+
+10.2 SISTEMA DE FILTROS
+
+FILTROS DISPONIBLES:
+
+FOSAS:
+- Año: Controlado por Timeline
+- Municipio: Multi-select, scroll, ~40 municipios
+- Zona: Multi-select, scroll, categorías de ubicación
+- Modalidad de fosa: Checkboxes, ~10 modalidades
+- Quién hizo el hallazgo: Checkboxes, ~5 actores
+- Búsqueda de texto: Input libre, busca en descripción
+
+MASACRES:
+- Año: Controlado por Timeline
+- Municipio: Multi-select, scroll, ~100 municipios
+- Búsqueda de texto: Input libre, busca en descripción y lugar
+
+COMPORTAMIENTO:
+- Filtros son acumulativos (AND lógico)
+- Actualización en tiempo real
+- Contador de resultados
+- Botón "Limpiar" resetea todos los filtros
+
+OPTIMIZACIÓN:
+- useMemo para evitar recálculos
+- Filtrado en cliente (no servidor)
+- ~1000 registros filtrados en <50ms
+
+10.3 LÍNEA DE TIEMPO
+
+CARACTERÍSTICAS:
+- Rango completo de años en datos (ej: 2012-2023)
+- 4 modos de operación
+- Animación con velocidad ajustable
+- Visualización de frecuencia por año
+
+MODO ALL:
+- Todos los años seleccionados
+- Sin handles visibles
+- Útil para vista general
+
+MODO CUSTOM:
+- Dos handles arrastrables
+- Selección de rango arbitrario
+- Drag de barra para mover rango
+- Snap a años disponibles
+
+MODO ANIMATION:
+- Avanza automáticamente
+- Play/Pause
+- Velocidad: 200ms, 400ms, 700ms, 1000ms, 1500ms
+- Loop continuo
+- Útil para narrativa temporal
+
+MODO INDIVIDUAL:
+- Un solo handle
+- Selecciona año específico
+- Click en track salta a ese año
+- Útil para análisis puntual
+
+INFORMACIÓN MOSTRADA:
+- "X períodos • Y fosas • Z masacres"
+- Actualizado en tiempo real
+
+10.4 POPUPS INFORMATIVOS
+
+FOSA POPUP:
+- Centrado en pantalla
+- Fondo blanco con tema rojo
+- Campos:
+  * Municipio (en negrita)
+  * Zona/ubicación
+  * Fecha de hallazgo
+  * Año
+  * Cuerpos encontrados
+  * Modalidad de fosa
+  * Características del sitio
+  * Quién hizo el hallazgo
+  * Descripción completa (scrolleable)
+  * Enlaces externos (si existen)
+- Cierre: Escape, X, o click fuera
+
+MASACRE POPUP:
+- Posicionado a la derecha
+- Fondo blanco con tema púrpura
+- Campos:
+  * Municipio (en negrita)
+  * Fecha
+  * Lugar
+  * Descripción resumida (scrolleable)
+  * Enlaces externos
+- Cierre: Escape o X
+
+INTERACCIÓN:
+- Click en punto → Zoom + Popup
+- Transición suave (FlyToInterpolator)
+- Popup se mantiene hasta cerrar manualmente
+
+10.5 POLÍGONOS DE MODALIDAD
+
+ACTIVACIÓN:
+- Se activa al filtrar por modalidad específica
+- Visible solo con filtros de modalidad activos
+
+RENDERIZADO:
+- Un polígono por modalidad filtrada
+- Convex hull de todos los puntos de esa modalidad
+- Color semi-transparente según modalidad
+
+LEYENDA:
+- Aparece automáticamente
+- Lista modalidades visibles
+- Muestra color y conteo
+- Esquina inferior derecha
+
+USO:
+- Visualizar distribución geográfica por modalidad
+- Identificar patrones espaciales
+- Comparar zonas de influencia
+
+10.6 NAVEGACIÓN Y ORIENTACIÓN
+
+BRÚJULA:
+- Indica norte magnético
+- Rota según bearing del mapa
+- Click resetea a norte (bearing = 0)
+
+BOTÓN INICIO:
+- Resetea vista a inicial:
+  * longitude: -102
+  * latitude: 23
+  * zoom: 5
+  * bearing: 0
+  * pitch: 0
+
+INERTIA:
+- Movimiento suave al soltar
+- Configurable en controller
+- scrollZoom con speed optimizado
+
+10.7 LOGOS INSTITUCIONALES
+
+POSICIONAMIENTO:
+- Logo LAF: Superior izquierdo (ajustable con panel)
+- Logo IBERO: Superior derecho (fijo)
+- pointer-events: none (no bloquean clicks)
+
+TRANSICIONES:
+- Logo LAF se mueve con panel colapsado
+- Duración: 0.3s ease
+
+===============================================================================
+11. ESTILOS Y UI/UX
+===============================================================================
+
+11.1 SISTEMA DE DISEÑO
+
+PALETA DE COLORES:
+
+FOSAS:
+- Primario: Rojo #DC2626
+- Secundario: Rojo oscuro #991B1B
+- Fondo: Blanco #FFFFFF
+- Texto: Gris oscuro #2D3748
+
+MASACRES:
+- Primario: Púrpura #9B59B6
+- Secundario: Púrpura oscuro #4B0082
+- Fondo: Blanco #FFFFFF
+- Texto: Gris oscuro #2D3748
+
+GENERAL:
+- Fondo mapa: Según estilo seleccionado
+- UI: Blanco con sombras rgba(0,0,0,0.1-0.3)
+- Texto secundario: #6B7280
+- Bordes: #E5E7EB
+
+TIPOGRAFÍA:
+- Font family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif
+- Tamaños:
+  * H3: 17px (títulos principales)
+  * Body: 13-14px (contenido)
+  * Small: 11-12px (metadatos)
+  * Buttons: 13px (acciones)
+
+11.2 COMPONENTES UI
+
+BOTONES:
+- Primarios: Fondo sólido con hover
+- Secundarios: Fondo blanco con borde
+- Destructivos: Rojo #EF4444
+- Border-radius: 6-8px
+- Padding: 6-12px
+- Transición: 0.2s
+
+INPUTS:
+- Border: 1px solid #D1D5DB
+- Focus: border azul #3B82F6 con shadow
+- Placeholder: gris #9CA3AF
+- Border-radius: 6px
+- Padding: 9-12px
+
+CHECKBOXES:
+- Tamaño: 16x16px
+- Border: 2px solid #CBD5E0
+- Checked: fondo azul #3B82F6
+- Border-radius: 4px
+
+SCROLLBARS (WEBKIT):
+- Ancho: 6-8px
+- Track: gris claro #F3F4F6
+- Thumb: gris medio #D1D5DB
+- Hover: gris oscuro #9CA3AF
+- Border-radius: 3-4px
+
+11.3 ANIMACIONES Y TRANSICIONES
+
+TRANSICIONES CSS:
+- Propiedades: all, width, left, opacity
+- Duración: 0.3s (panel), 0.2s (botones)
+- Easing: ease o cubic-bezier
+
+ANIMACIONES DECK.GL:
+- FlyToInterpolator: transición suave de cámara
+- Duración: 800ms para zoom
+- Easing: incorporado en deck.gl
+
+TIMELINE ANIMATION:
+- Intervalo: 200-1500ms configurable
+- requestAnimationFrame para suavidad
+- Limpieza con clearInterval
+
+HOVER EFFECTS:
+- Scale: 1.05 en botones pequeños
+- Background: transparencia aumentada
+- Shadow: más pronunciada
+- Transición: 0.2s
+
+11.4 RESPONSIVE DESIGN
+
+BREAKPOINTS:
+- Mobile: < 768px (limitado por deck.gl)
+- Tablet: 768-1024px
+- Desktop: > 1024px (óptimo)
+
+ADAPTACIONES:
+- Panel de filtros: Fixed positioning
+- Timeline: Fixed bottom
+- Popups: Max-width porcentual
+- Logos: Absolute positioning ajustado
+
+CONSIDERACIONES:
+- deck.gl requiere canvas de tamaño razonable
+- Touch events soportados en Timeline
+- Zoom adaptado a dispositivo
+
+11.5 ACCESIBILIDAD
+
+IMPLEMENTADO:
+- title attributes en botones
+- aria-labels implícitos en controles
+- Keyboard navigation:
+  * Escape cierra popups
+  * Tab navega controles
+  * Enter activa botones
+
+MEJORAS POTENCIALES:
+- aria-live para anuncios dinámicos
+- Roles ARIA en componentes complejos
+- Alto contraste en colores
+- Focus visible más pronunciado
+
+11.6 RENDIMIENTO UI
+
+OPTIMIZACIONES:
+- pointer-events: none en logos
+- will-change en elementos animados
+- transform para movimiento (GPU)
+- overflow-y: auto con contain
+
+BUNDLE SIZE:
+- deck.gl: ~500KB gzipped
+- React: ~40KB gzipped
+- Total app: ~600KB gzipped
+
+LOAD TIME:
+- Initial load: ~2-3s (4G)
+- CSV parsing: ~200-500ms
+- First render: ~1s
+
+===============================================================================
+12. TECNOLOGÍAS UTILIZADAS
+===============================================================================
+
+12.1 CORE FRAMEWORK
+
+REACT 19.1.1:
+- Biblioteca de UI declarativa
+- Hooks para gestión de estado
+- Virtual DOM para rendimiento
+- StrictMode habilitado
+
+TYPESCRIPT 5.8.3:
+- Superset tipado de JavaScript
+- Detección de errores en desarrollo
+- IntelliSense mejorado
+- Interfaces para datos CSV
+
+VITE 7.1.2:
+- Build tool moderno
+- HMR (Hot Module Replacement)
+- Optimización de bundle
+- Dev server rápido
+
+12.2 VISUALIZACIÓN
+
+DECK.GL 9.1.14:
+- Framework de visualización geoespacial
+- WebGL rendering de alto rendimiento
+- Capas:
+  * ScatterplotLayer (puntos)
+  * PolygonLayer (áreas)
+  * TileLayer (mapas base)
+  * TerrainLayer (elevación 3D)
+  * BitmapLayer (texturas)
+- Controller para interacción
+- Widgets (Compass experimental)
+
+DECK.GL MODULES UTILIZADOS:
+- @deck.gl/core: Motor principal
+- @deck.gl/layers: Capas básicas
+- @deck.gl/geo-layers: Capas geográficas
+- @deck.gl/react: Integración React
+- @deck.gl/widgets: Utilidades UI
+
+12.3 PROCESAMIENTO DE DATOS
+
+PAPAPARSE 5.4.1:
+- Parser CSV robusto
+- Streaming y descarga
+- Detección automática de delimitadores
+- Manejo de headers
+- Conversión de tipos
+
+@TYPES/PAPAPARSE 5.3.16:
+- Tipos TypeScript para Papa Parse
+- Autocompletado en IDE
+
+12.4 GEOESPACIAL
+
+@TURF/TURF 7.2.0:
+- Análisis geoespacial (no usado actualmente)
+- Potencial para futuras funciones:
+  * Buffer de puntos
+  * Intersecciones
+  * Medición de distancias
+
+COORDINATE SYSTEMS:
+- WGS84 (EPSG:4326): Sistema de coordenadas
+- Decimal degrees: Formato de entrada
+- Web Mercator: Proyección de visualización
+
+12.5 STYLING
+
+TAILWIND CSS 4.1.14:
+- Utility-first CSS framework
+- JIT (Just-In-Time) compilation
+- Clases:
+  * Layout: flex, grid, fixed, absolute
+  * Spacing: p-*, m-*, gap-*
+  * Colors: bg-*, text-*, border-*
+  * Effects: shadow-*, rounded-*
+
+@TAILWINDCSS/VITE 4.1.14:
+- Integración Vite + Tailwind
+- Optimización automática
+
+CUSTOM CSS:
+- src/index.css: ~400 líneas
+- Clases personalizadas para:
+  * Panel de filtros
+  * Timeline
+  * Scrollbars
+  * Popups
+
+12.6 DEVELOPMENT TOOLS
+
+ESLINT 9.33.0:
+- Linter para JavaScript/TypeScript
+- Reglas para React
+- Plugins:
+  * eslint-plugin-react-hooks
+  * eslint-plugin-react-refresh
+  * typescript-eslint
+
+@VITEJS/PLUGIN-REACT 5.0.0:
+- Plugin oficial React para Vite
+- Fast Refresh
+- JSX transformation
+
+TYPESCRIPT COMPILER:
+- tsconfig.json: Config principal
+- tsconfig.app.json: Config de app
+- tsconfig.node.json: Config de Node
+
+12.7 OTROS
+
+MAPLIBRE-GL 5.7.0:
+- Instalado pero no usado actualmente
+- Alternativa a Mapbox GL
+- Potencial para mapas vectoriales
+
+REACT-LEAFLET 5.0.0:
+- Instalado pero no usado
+- Alternativa a deck.gl
+- Menor rendimiento pero más simple
+
+REQUEST 2.88.2:
+- HTTP client (posiblemente legacy)
+- No usado en código actual
+
+===============================================================================
+13. OPTIMIZACIONES Y RENDIMIENTO
+===============================================================================
+
+13.1 REACT OPTIMIZATIONS
+
+USEMEMO:
+- Ubicaciones: filteredFosas, filteredMasacres, allYears
+- Propósito: Evitar recálculos en cada render
+- Dependencias: fosas, masacres, filters
+
+USECALLBACK:
+- Handlers de eventos
+- Callbacks pasados a componentes hijos
+- Previene recreación de funciones
+
+USEREF:
+- Referencias a elementos DOM (Timeline track)
+- Valores que no causan re-render (timers)
+- Estado de drag & drop
+
+COMPONENT MEMOIZATION:
+- Potencial: React.memo en componentes puros
+- No implementado actualmente
+
+13.2 DECK.GL OPTIMIZATIONS
+
+UPDATETRIGGERS:
+- Especificados en capas
+- Previene updates innecesarios
+- Triggers: data, getPosition, getFillColor
+
+AUTOHIGHLIGHT:
+- Habilitado para hover sin re-render
+- WebGL maneja resaltado
+
+PICKING:
+- pickingRadius: 12px
+- Mejora UX sin sacrificar performance
+
+LAYER MANAGEMENT:
+- Capas condicionales (showFosas, showMasacres)
+- Solo carga capas necesarias
+
+13.3 DATA PROCESSING
+
+CSV PARSING:
+- Una vez al inicio
+- Datos cacheados en estado
+- ~1000 registros en <500ms
+
+COORDINATE PARSING:
+- Regex optimizados
+- Early return en validaciones
+- Skip de coordenadas inválidas
+
+FILTERING:
+- Cliente-side (no round trips)
+- useMemo para caching
+- Filtros acumulativos eficientes
+
+13.4 RENDERING
+
+CONDITIONAL RENDERING:
+- && y ternarios para UI opcional
+- Evita renderizar componentes pesados
+
+ANIMATION:
+- requestAnimationFrame para Timeline
+- CSS transitions para UI
+- FlyToInterpolator para cámara
+
+SCROLLING:
+- overscroll-behavior: contain
+- Previene scroll propagation
+- Smooth scrolling nativo
+
+13.5 BUNDLE OPTIMIZATION
+
+TREE SHAKING:
+- Vite automático
+- ES modules preservados
+- Dead code elimination
+
+CODE SPLITTING:
+- Potencial: React.lazy para rutas
+- No implementado (SPA simple)
+
+ASSET OPTIMIZATION:
+- Logos PNG optimizados
+- CSV comprimidos con gzip
+- Font loading optimizado
+
+13.6 NETWORK
+
+MAP TILES:
+- Cacheados por navegador
+- CDN para tiles
+- Progressive loading
+
+CSV DOWNLOAD:
+- Una vez al inicio
+- ~2MB total sin comprimir
+- ~500KB con gzip
+
+API CALLS:
+- Ninguna actualmente
+- Todo estático
+
+13.7 MEMORY MANAGEMENT
+
+CLEANUP:
+- useEffect cleanup para timers
+- Event listener removal
+- Ref clearing
+
+DATA STRUCTURES:
+- Arrays eficientes
+- Sets para búsquedas rápidas
+- Maps para agrupaciones
+
+GARBAGE COLLECTION:
+- Minimizar objetos temporales
+- Reutilizar estructuras cuando posible
+
+===============================================================================
+14. TROUBLESHOOTING
+===============================================================================
+
+14.1 PROBLEMAS COMUNES
+
+PROBLEMA: Puntos no aparecen en el mapa
+CAUSAS:
+- Coordenadas inválidas en CSV
+- Coordenadas fuera de rango visible
+- Filtros demasiado restrictivos
+- CSV no cargado correctamente
+
+SOLUCIONES:
+1. Verificar CSV tiene Coord_X y Coord_Y correctos
+2. Usar "Limpiar" filtros
+3. Zoom out para ver más área
+4. Revisar consola de navegador por errores
+
+PROBLEMA: Mapa no carga o está en blanco
+CAUSAS:
+- Sin conexión a internet (mapas base)
+- Bloqueador de contenido/ad-blocker
+- Error en WebGL
+- Caché corrupto
+
+SOLUCIONES:
+1. Verificar conexión a internet
+2. Deshabilitar extensiones de navegador
+3. Probar en modo incógnito
+4. Limpiar caché (Ctrl+Shift+Delete)
+5. Verificar que GPU está habilitada
+
+PROBLEMA: Timeline no responde
+CAUSAS:
+- No hay años en datos
+- Rango inválido
+- JavaScript deshabilitado
+
+SOLUCIONES:
+1. Verificar que CSV tiene columna de año
+2. Recargar página
+3. Revisar consola por errores
+
+PROBLEMA: Filtros no funcionan
+CAUSAS:
+- Datos no coinciden con filtros
+- Typo en nombres (mayúsculas/minúsculas)
+- Campos vacíos en CSV
+
+SOLUCIONES:
+1. Verificar que datos tienen campos requeridos
+2. Normalizar datos en CSV
+3. Usar búsqueda de texto como alternativa
+
+PROBLEMA: Popup no cierra
+CAUSAS:
+- Event listener no funcionando
+- Z-index issue
+- Click fuera no detectado
+
+SOLUCIONES:
+1. Presionar Escape
+2. Click en X del popup
+3. Recargar página
+
+PROBLEMA: Rendimiento lento
+CAUSAS:
+- Demasiados puntos visibles
+- Modo 3D en hardware limitado
+- Animación muy rápida
+
+SOLUCIONES:
+1. Aplicar filtros para reducir puntos
+2. Cambiar a modo 2D
+3. Cerrar otras pestañas
+4. Aumentar intervalo de animación
+
+14.2 ERRORES EN CONSOLA
+
+ERROR: "Cannot read property 'position' of undefined"
+CAUSA: Registro sin coordenadas válidas
+SOLUCIÓN: Filtrar registros con coordenadas en hooks
+
+ERROR: "WebGL context lost"
+CAUSA: Problema con GPU o memoria
+SOLUCIÓN: 
+1. Cerrar otras aplicaciones
+2. Actualizar drivers de GPU
+3. Reiniciar navegador
+
+ERROR: "Failed to fetch CSV"
+CAUSA: Archivo CSV no encontrado o CORS
+SOLUCIÓN:
+1. Verificar ruta del CSV
+2. Asegurar que está en src/assets/
+3. Rebuild con npm run build
+
+ERROR: "Invalid coordinate"
+CAUSA: Coordenada fuera de rango
+SOLUCIÓN: Validar coordenadas en -180 a 180 (lon) y -90 a 90 (lat)
+
+14.3 DEBUGGING
+
+HERRAMIENTAS:
+- Chrome DevTools (F12)
+- React DevTools extension
+- Console logs estratégicos
+- Network tab para CSV loads
+
+PUNTOS DE INSPECCIÓN:
+1. Estado de fosas y masacres en React DevTools
+2. Valores de filters
+3. Resultado de filteredFosas y filteredMasacres
+4. ViewState en deck.gl
+5. Eventos de click en console
+
+LOGS ÚTILES:
+- console.log(fosas.length) después de carga
+- console.log(filters) después de cambio
+- console.log(selectedFeature) al hacer click
+
+===============================================================================
+15. MANTENIMIENTO Y ACTUALIZACIÓN DE DATOS
+===============================================================================
+
+15.1 ACTUALIZAR FOSAS
+
+PASOS:
+1. Preparar CSV actualizado con mismo formato
+2. Limpiar datos con Python/pandas:
+   ```python
+   import pandas as pd
+   df = pd.read_csv('fosas_raw.csv')
+   df = df.dropna(subset=['Coord_X', 'Coord_Y'])
+   df = df.drop_duplicates(subset=['Coord_X', 'Coord_Y'])
+   df.to_csv('Fosas_clandestinas_2.csv', index=False)
+   ```
+3. Copiar a src/assets/
+4. Verificar columnas requeridas
+5. npm run dev para probar
+6. npm run build para producción
+
+VALIDACIONES:
+- Coordenadas en rango válido
+- Municipios normalizados
+- Fechas en formato consistente
+- Sin duplicados exactos
+
+15.2 ACTUALIZAR MASACRES
+
+SIMILAR A FOSAS:
+1. Preparar CSV con coord_x, coord_y
+2. Validar formato decimal
+3. Copiar a src/assets/
+4. Renombrar si es necesario en useMasacresData.ts
+5. Rebuild
+
+CONSIDERACIONES:
+- Archivo actual: "Base de Datos - Masacres (1).csv"
+- Si cambia nombre, actualizar línea 13 de useMasacresData.ts
+
+15.3 AGREGAR NUEVOS CAMPOS
+
+SI SE AGREGA CAMPO A CSV:
+1. Actualizar tipos en hooks (FosaRecord o MasacreRecord)
+2. Modificar Popup para mostrar nuevo campo
+3. Opcionalmente agregar a filtros
+4. Actualizar UnifiedFilterPanel si se necesita filtrar
+
+EJEMPLO:
+```typescript
+// En FosaPopup.tsx
+const nuevoCampo = getValue(feature.raw, ['NUEVO_CAMPO', 'nuevo_campo']);
+// Agregar en JSX:
+{nuevocampo && (
+  <div>
+    <strong>Nuevo Campo:</strong> {nuevocampo}
+  </div>
+)}
+```
+
+15.4 MANTENIMIENTO DE CÓDIGO
+
+VERSIONADO:
+- Git branches por feature
+- Commits descriptivos
+- Tags para releases
+
+TESTING:
+- Pruebas manuales después de cambios
+- Verificar en múltiples navegadores
+- Probar con datos edge case
+
+DOCUMENTACIÓN:
+- Actualizar este archivo
+- Comentarios en código complejo
+- README.md con cambios
+
+PERFORMANCE:
+- Perfilar con Chrome DevTools
+- Monitorear tamaño de bundle
+- Optimizar imports si crece
+
+===============================================================================
+FIN DE DOCUMENTACIÓN
+===============================================================================
+
+ÚLTIMA ACTUALIZACIÓN: Diciembre 7, 2025
+VERSIÓN: 1.0.0
+AUTOR: Documentación generada por análisis de código
+PROYECTO: LAF - Laboratorio de Análisis Forense (visualización)
+
+Para más información o soporte, consultar:
+- Repositorio GitHub: https://github.com/Inigo1405/LAF
+- Issues: Reportar problemas en GitHub Issues
+- Contacto: IBERO Puebla
+
+===============================================================================
