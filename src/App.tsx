@@ -16,10 +16,14 @@ import type { TileLayerProps } from "@deck.gl/geo-layers";
 import Compass from './components/Compass';
 import FosaPopup from './components/FosaPopup';
 import MasacrePopup from './components/MasacrePopup';
+import MunicipioPopup, { type MunicipioProperties } from './components/MunicipioPopup';
+import LayerSelector from './components/LayerSelector';
 import { createFosasLayer, createModalidadPolygons, getModalidadesWithColors } from './layers/FosasLayer';
 import { createMasacresLayer } from './layers/MasacresLayer';
+import { createShapeLayer } from './layers/ShapeLayer';
 import { useFosasData } from './hooks/useFosasData';
 import { useMasacresData, type MasacreRecord } from './hooks/useMasacresData';
+import { useShapefileLoader, LAYER_CONFIGS, type ShapeFeature } from './hooks/useShapefileLoader';
 import type { FosaRecord } from './hooks/useFosasData';
 import UnifiedFilterPanel, { type UnifiedFilters } from './components/UnifiedFilterPanel';
 import Timeline from './components/Timeline';
@@ -30,6 +34,7 @@ import logoIbero from './assets/Logo-Ibero.png';
 type SelectedFeature =
   | { type: 'fosa'; rec: FosaRecord }
   | { type: 'masacre'; rec: MasacreRecord }
+  | { type: 'municipio'; properties: MunicipioProperties }
   | null;
 
 // source: Natural Earth http://www.naturalearthdata.com/ via geojson.xyz
@@ -49,6 +54,24 @@ function Root() {
   const [mapStyle, setMapStyle] = useState<number>(0);
   const { fosas } = useFosasData();
   const { masacres } = useMasacresData();
+  
+  // Cargar todas las capas de shapefiles
+  const municipiosData = useShapefileLoader(LAYER_CONFIGS[0]);
+  const corredorData = useShapefileLoader(LAYER_CONFIGS[1]);
+  
+  // Estado de capas activas (ninguna activa al inicio)
+  const [activeLayers, setActiveLayers] = useState<string[]>([]);
+  
+  // Map de datos de capas para fácil acceso
+  const shapeLayersData: Record<string, { features: ShapeFeature[]; loading: boolean }> = {
+    municipios: { features: municipiosData.features, loading: municipiosData.loading },
+    corredor: { features: corredorData.features, loading: corredorData.loading },
+  };
+  
+  const loadingLayers = Object.entries(shapeLayersData)
+    .filter(([, data]) => data.loading)
+    .map(([id]) => id);
+
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature>(null);
   const [filters, setFilters] = useState<UnifiedFilters>({
@@ -268,6 +291,30 @@ function Root() {
       } as TileLayerProps),
     ];
 
+    // Agregar capas de shapefiles activas
+    for (const config of LAYER_CONFIGS) {
+      if (activeLayers.includes(config.id)) {
+        const layerData = shapeLayersData[config.id];
+        if (layerData && layerData.features.length > 0 && !layerData.loading) {
+          baseLayers.push(createShapeLayer(config.id, layerData.features, config, {
+            visible: true,
+            pickable: true,
+            highlightColor: [255, 255, 100, 150],
+            // Pasar yearRange solo para la capa del corredor
+            yearRange: config.id === 'corredor' ? yearRange : null,
+            onClick: (info: any) => {
+              if (info?.object?.properties) {
+                setSelectedFeature({ 
+                  type: 'municipio', 
+                  properties: info.object.properties as MunicipioProperties 
+                });
+              }
+            },
+          }));
+        }
+      }
+    }
+
     // Agregar polígonos de modalidad si hay filtros activos
     const modalidadPolygonLayer = createModalidadPolygons(filteredFosas);
     if (modalidadPolygonLayer && filters.modalidad.length > 0) {
@@ -353,7 +400,7 @@ function Root() {
     }
 
     return baseLayers;
-  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres]);
+  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, yearRange]);
     
 
   return (
@@ -408,6 +455,10 @@ function Root() {
 
               setSelectedFeature({ type: 'masacre', rec: feature });
             }
+          }
+          // El click en capas de shapefiles se maneja en el onClick del layer
+          else if (info?.layer?.id?.startsWith('shape-layer-')) {
+            // No hacer nada aquí, el onClick del layer ya maneja esto
           }
           else {
             // Click fuera de puntos: cerrar popup
@@ -492,6 +543,13 @@ function Root() {
         {selectedFeature?.type === 'masacre' && (
           <MasacrePopup feature={selectedFeature.rec} onClose={() => setSelectedFeature(null)} />
         )}
+        {selectedFeature?.type === 'municipio' && (
+          <MunicipioPopup 
+            properties={selectedFeature.properties} 
+            onClose={() => setSelectedFeature(null)} 
+            yearRange={yearRange}
+          />
+        )}
       </DeckGL>
 
 
@@ -537,8 +595,39 @@ function Root() {
             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: 'rgb(155, 89, 182)', border: '2px solid rgb(75, 0, 130)' }}></div>
             <span className="text-xs text-gray-700">Masacres</span>
           </div>
+          {/* Mostrar capas activas en la leyenda */}
+          {LAYER_CONFIGS.filter(c => activeLayers.includes(c.id)).map(config => (
+            <div key={config.id} className="flex items-center gap-2">
+              <div 
+                className="w-4 h-4 rounded" 
+                style={{ 
+                  backgroundColor: config.color 
+                    ? `rgba(${config.color[0]}, ${config.color[1]}, ${config.color[2]}, 0.5)` 
+                    : 'rgba(65, 105, 225, 0.5)', 
+                  border: config.strokeColor 
+                    ? `2px solid rgba(${config.strokeColor[0]}, ${config.strokeColor[1]}, ${config.strokeColor[2]}, 0.8)` 
+                    : '2px solid rgba(65, 105, 225, 0.8)' 
+                }}
+              ></div>
+              <span className="text-xs text-gray-700">{config.name}</span>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* Selector de capas de polígonos */}
+      <LayerSelector
+        layers={LAYER_CONFIGS}
+        activeLayers={activeLayers}
+        onToggleLayer={(layerId) => {
+          setActiveLayers(prev => 
+            prev.includes(layerId) 
+              ? prev.filter(id => id !== layerId)
+              : [...prev, layerId]
+          );
+        }}
+        loadingLayers={loadingLayers}
+      />
 
       {/* Botones de control */}
       <div 
