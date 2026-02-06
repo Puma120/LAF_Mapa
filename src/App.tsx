@@ -547,7 +547,7 @@ function Root() {
           <MunicipioPopup 
             properties={selectedFeature.properties} 
             onClose={() => setSelectedFeature(null)} 
-            yearRange={yearRange}
+            yearRange={yearRange ?? undefined}
           />
         )}
       </DeckGL>
