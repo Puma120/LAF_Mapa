@@ -283,4 +283,20 @@ export const LAYER_CONFIGS: ShapeConfig[] = [
     filterField: 'NOMGEO',
     filterValues: CORREDOR_MUNICIPIOS,
   },
+  {
+    id: 'desapariciones',
+    name: 'Desapariciones por Municipio',
+    basePath: '/ShapesBase_Puebla',
+    fileName: '21mun',
+    color: [255, 20, 147, 80],
+    strokeColor: [255, 20, 147, 180],
+  },
+  {
+    id: 'homicidio_doloso',
+    name: 'Homicidio Doloso',
+    basePath: '/Homicidio_Doloso',
+    fileName: 'Homicidio Doloso',
+    color: [255, 140, 0, 100],
+    strokeColor: [255, 140, 0, 220],
+  },
 ];

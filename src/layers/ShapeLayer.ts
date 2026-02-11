@@ -36,16 +36,14 @@ function getBorderColor(fillColor: [number, number, number, number]): [number, n
 }
 
 // Función para calcular el total de desapariciones según el rango de años
-function calcularDesapariciones(properties: Record<string, any>, yearRange: [number, number] | null): number {
+function calcularDesapariciones(properties: Record<string, any>, yearRange: [number, number] | null, prefix: string = 'DPFGE_'): number {
   if (!yearRange) return 0;
   
   const [minYear, maxYear] = yearRange;
   let total = 0;
   
-  // Los campos DPFGE_ contienen datos de desapariciones por año
-  // Formato esperado: DPFGE_2014, DPFGE_2015, etc.
   for (let year = minYear; year <= maxYear; year++) {
-    const fieldName = `DPFGE_${year}`;
+    const fieldName = `${prefix}${year}`;
     const value = properties[fieldName];
     if (value != null && !isNaN(Number(value))) {
       total += Number(value);
@@ -130,13 +128,16 @@ export function createShapeLayer(
   const baseColor = config.color || [65, 105, 225, 80];
   const baseStroke = config.strokeColor || getBorderColor(baseColor as [number, number, number, number]);
 
-  // Si es la capa del corredor y hay yearRange, calcular el máximo de desapariciones
+  // Si es la capa del corredor o desapariciones y hay yearRange, calcular el máximo
   let maxDesapariciones = 0;
-  const useIntensity = layerId === 'corredor' && yearRange != null;
+  const isCorredorLayer = layerId === 'corredor' && yearRange != null;
+  const isDesapLayer = layerId === 'desapariciones' && yearRange != null;
+  const useIntensity = isCorredorLayer || isDesapLayer;
+  const desapPrefix = isDesapLayer ? '_DESAP_TOTAL_' : 'DPFGE_';
   
   if (useIntensity) {
     for (const feature of features) {
-      const total = calcularDesapariciones(feature.properties || {}, yearRange);
+      const total = calcularDesapariciones(feature.properties || {}, yearRange, desapPrefix);
       if (total > maxDesapariciones) {
         maxDesapariciones = total;
       }
@@ -158,9 +159,9 @@ export function createShapeLayer(
       getLineColor: [yearRange],
     },
     getFillColor: (feature: Feature<Geometry, GeoJsonProperties>) => {
-      // Si es capa del corredor con yearRange, usar intensidad por desapariciones
+      // Si es capa con yearRange (corredor o desapariciones), usar intensidad
       if (useIntensity && feature.properties) {
-        const desapariciones = calcularDesapariciones(feature.properties, yearRange);
+        const desapariciones = calcularDesapariciones(feature.properties, yearRange, desapPrefix);
         return getColorByIntensity(
           baseColor as [number, number, number, number],
           desapariciones,
@@ -175,9 +176,9 @@ export function createShapeLayer(
       return getColorByIndex(layerId, index);
     },
     getLineColor: (feature: Feature<Geometry, GeoJsonProperties>) => {
-      // Si es capa del corredor con yearRange, usar intensidad por desapariciones
+      // Si es capa con yearRange (corredor o desapariciones), usar intensidad
       if (useIntensity && feature.properties) {
-        const desapariciones = calcularDesapariciones(feature.properties, yearRange);
+        const desapariciones = calcularDesapariciones(feature.properties, yearRange, desapPrefix);
         const fillColor = getColorByIntensity(
           baseColor as [number, number, number, number],
           desapariciones,

@@ -24,6 +24,7 @@ import { createShapeLayer } from './layers/ShapeLayer';
 import { useFosasData } from './hooks/useFosasData';
 import { useMasacresData, type MasacreRecord } from './hooks/useMasacresData';
 import { useShapefileLoader, LAYER_CONFIGS, type ShapeFeature } from './hooks/useShapefileLoader';
+import { useDesapData } from './hooks/useDesapData';
 import type { FosaRecord } from './hooks/useFosasData';
 import UnifiedFilterPanel, { type UnifiedFilters } from './components/UnifiedFilterPanel';
 import Timeline from './components/Timeline';
@@ -58,6 +59,34 @@ function Root() {
   // Cargar todas las capas de shapefiles
   const municipiosData = useShapefileLoader(LAYER_CONFIGS[0]);
   const corredorData = useShapefileLoader(LAYER_CONFIGS[1]);
+  const homicidioDolosoData = useShapefileLoader(LAYER_CONFIGS[3]);
+  
+  // Cargar datos de desapariciones del CSV
+  const desapCSV = useDesapData();
+  
+  // Enriquecer polígonos de municipios con datos del CSV de desapariciones
+  const desapFeatures = useMemo(() => {
+    if (municipiosData.loading || desapCSV.loading || !desapCSV.data.size) return [];
+    
+    return municipiosData.features
+      .filter(f => desapCSV.data.has(f.properties?.CVEGEO))
+      .map(f => {
+        const csvData = desapCSV.data.get(f.properties.CVEGEO)!;
+        const props = { ...f.properties };
+        
+        // Agregar datos del CSV por año con prefijo _DESAP_
+        for (const [year, record] of csvData.byYear) {
+          props[`_DESAP_TOTAL_${year}`] = record.Total;
+          props[`_DESAP_H_${year}`] = record.Hombres;
+          props[`_DESAP_M_${year}`] = record.Mujeres;
+          props[`_DESAP_POB_${year}`] = record.Poblacion;
+          props[`_DESAP_TASA_${year}`] = record.TASA_100K;
+        }
+        props._hasDesapData = true;
+        
+        return { ...f, properties: props };
+      });
+  }, [municipiosData.features, municipiosData.loading, desapCSV.data, desapCSV.loading]);
   
   // Estado de capas activas (ninguna activa al inicio)
   const [activeLayers, setActiveLayers] = useState<string[]>([]);
@@ -66,6 +95,8 @@ function Root() {
   const shapeLayersData: Record<string, { features: ShapeFeature[]; loading: boolean }> = {
     municipios: { features: municipiosData.features, loading: municipiosData.loading },
     corredor: { features: corredorData.features, loading: corredorData.loading },
+    desapariciones: { features: desapFeatures, loading: municipiosData.loading || desapCSV.loading },
+    homicidio_doloso: { features: homicidioDolosoData.features, loading: homicidioDolosoData.loading },
   };
   
   const loadingLayers = Object.entries(shapeLayersData)
@@ -300,8 +331,8 @@ function Root() {
             visible: true,
             pickable: true,
             highlightColor: [255, 255, 100, 150],
-            // Pasar yearRange solo para la capa del corredor
-            yearRange: config.id === 'corredor' ? yearRange : null,
+            // Pasar yearRange para capas con datos de desapariciones
+            yearRange: (config.id === 'corredor' || config.id === 'desapariciones') ? yearRange : null,
             onClick: (info: any) => {
               if (info?.object?.properties) {
                 setSelectedFeature({ 
