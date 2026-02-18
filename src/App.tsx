@@ -18,6 +18,10 @@ import FosaPopup from './components/FosaPopup';
 import MasacrePopup from './components/MasacrePopup';
 import MunicipioPopup, { type MunicipioProperties } from './components/MunicipioPopup';
 import LayerSelector from './components/LayerSelector';
+import LoginModal from './components/LoginModal';
+import AdminPanel, { type UploadedCSV } from './components/AdminPanel';
+import WelcomeScreen from './components/WelcomeScreen';
+import { useAuth } from './contexts/AuthContext';
 import { createFosasLayer, createModalidadPolygons, getModalidadesWithColors } from './layers/FosasLayer';
 import { createMasacresLayer } from './layers/MasacresLayer';
 import { createShapeLayer } from './layers/ShapeLayer';
@@ -52,17 +56,36 @@ const INITIAL_VIEW_STATE = {
 
 
 function Root() {
+  const { isAdmin, isAuthenticated, logout } = useAuth();
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [uploadedCSVs, setUploadedCSVs] = useState<UploadedCSV[]>([]);
+
+  const handleCSVUpload = useCallback((csv: UploadedCSV) => {
+    setUploadedCSVs(prev => [...prev, csv]);
+  }, []);
+
+  const handleCSVRemove = useCallback((csvId: string) => {
+    setUploadedCSVs(prev => prev.filter(c => c.id !== csvId));
+  }, []);
+
   const [mapStyle, setMapStyle] = useState<number>(0);
   const { fosas } = useFosasData();
   const { masacres } = useMasacresData();
   
-  // Cargar todas las capas de shapefiles
-  const municipiosData = useShapefileLoader(LAYER_CONFIGS[0]);
-  const corredorData = useShapefileLoader(LAYER_CONFIGS[1]);
-  const homicidioDolosoData = useShapefileLoader(LAYER_CONFIGS[3]);
+  // Estado de capas activas (ninguna activa al inicio)
+  const [activeLayers, setActiveLayers] = useState<string[]>([]);
   
-  // Cargar datos de desapariciones del CSV
-  const desapCSV = useDesapData();
+  // Cargar capas de shapefiles SOLO cuando están activas (lazy loading)
+  // municipios también se necesita si desapariciones está activa (comparten polígonos)
+  const needsMunicipios = activeLayers.includes('municipios') || activeLayers.includes('desapariciones');
+  const municipiosData = useShapefileLoader(LAYER_CONFIGS[0], needsMunicipios);
+  const corredorData = useShapefileLoader(LAYER_CONFIGS[1], activeLayers.includes('corredor'));
+  const homicidioDolosoData = useShapefileLoader(LAYER_CONFIGS[3], activeLayers.includes('homicidio_doloso'));
+  
+  // Cargar datos de desapariciones del CSV solo cuando la capa está activa
+  const desapCSV = useDesapData(activeLayers.includes('desapariciones'));
   
   // Enriquecer polígonos de municipios con datos del CSV de desapariciones
   const desapFeatures = useMemo(() => {
@@ -87,9 +110,6 @@ function Root() {
         return { ...f, properties: props };
       });
   }, [municipiosData.features, municipiosData.loading, desapCSV.data, desapCSV.loading]);
-  
-  // Estado de capas activas (ninguna activa al inicio)
-  const [activeLayers, setActiveLayers] = useState<string[]>([]);
   
   // Map de datos de capas para fácil acceso
   const shapeLayersData: Record<string, { features: ShapeFeature[]; loading: boolean }> = {
@@ -310,12 +330,17 @@ function Root() {
 
   
   const layers = useMemo(() => {
+    // Bounding box de México para limitar las tiles cargadas
+    // [west, south, east, north]
+    const MEXICO_EXTENT: [number, number, number, number] = [-120, 13, -85, 34];
+
     const baseLayers: any[] = [
       new TileLayer({
         id: "tile-layer",
         minZoom: 0,
         maxZoom: 18,
         tileSize: 256,
+        extent: MEXICO_EXTENT,
         data: maps[mapStyle],
         renderSubLayers: renderTileSubLayers,
         pickable: false,
@@ -433,6 +458,11 @@ function Root() {
     return baseLayers;
   }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, yearRange]);
     
+
+  // Pantalla de bienvenida (después de todos los hooks)
+  if (showWelcome) {
+    return <WelcomeScreen onEnter={() => setShowWelcome(false)} />;
+  }
 
   return (
     <div>
@@ -598,13 +628,49 @@ function Root() {
         />
       </div>
 
-      {/* Logo superior derecho */}
-      <div className="absolute top-8 right-8 pointer-events-none">
+      {/* Logo superior derecho + Auth buttons */}
+      <div className="absolute top-8 right-8 flex items-start gap-3">
         <img
           src={logoIbero}
           alt="IBERO Puebla"
-          className="h-14"
+          className="h-14 pointer-events-none"
         />
+        <div className="flex flex-col gap-2 pointer-events-auto">
+          {isAuthenticated ? (
+            <>
+              <button
+                onClick={() => setShowAdmin(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white text-xs font-medium rounded-lg shadow-lg transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M8.34 1.804A1 1 0 0 1 9.32 1h1.36a1 1 0 0 1 .98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 0 1 1.262.125l.962.962a1 1 0 0 1 .125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.295a1 1 0 0 1 .804.98v1.361a1 1 0 0 1-.804.98l-1.473.295a6.95 6.95 0 0 1-.587 1.416l.834 1.25a1 1 0 0 1-.125 1.262l-.962.962a1 1 0 0 1-1.262.125l-1.25-.834a6.953 6.953 0 0 1-1.416.587l-.295 1.473a1 1 0 0 1-.98.804H9.32a1 1 0 0 1-.98-.804l-.295-1.473a6.957 6.957 0 0 1-1.416-.587l-1.25.834a1 1 0 0 1-1.262-.125l-.962-.962a1 1 0 0 1-.125-1.262l.834-1.25a6.957 6.957 0 0 1-.587-1.416l-1.473-.295A1 1 0 0 1 1 10.68V9.32a1 1 0 0 1 .804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 0 1 .125-1.262l.962-.962A1 1 0 0 1 5.38 3.03l1.25.834a6.957 6.957 0 0 1 1.416-.587l.294-1.473ZM13 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" clipRule="evenodd" />
+                </svg>
+                Admin
+              </button>
+              <button
+                onClick={logout}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-700/80 hover:bg-red-700 text-white text-xs font-medium rounded-lg shadow-lg transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clipRule="evenodd" />
+                  <path fillRule="evenodd" d="M6 10a.75.75 0 0 1 .75-.75h9.546l-1.048-.943a.75.75 0 1 1 1.004-1.114l2.5 2.25a.75.75 0 0 1 0 1.114l-2.5 2.25a.75.75 0 1 1-1.004-1.114l1.048-.943H6.75A.75.75 0 0 1 6 10Z" clipRule="evenodd" />
+                </svg>
+                Salir
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setShowLogin(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-gray-700 text-xs font-medium rounded-lg shadow-lg transition-colors border border-gray-200"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M6 10a.75.75 0 0 1 .75-.75h9.546l-1.048-.943a.75.75 0 1 1 1.004-1.114l2.5 2.25a.75.75 0 0 1 0 1.114l-2.5 2.25a.75.75 0 1 1-1.004-1.114l1.048-.943H6.75A.75.75 0 0 1 6 10Z" clipRule="evenodd" />
+              </svg>
+              Iniciar Sesión
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Leyenda del mapa */}
@@ -718,6 +784,19 @@ function Root() {
       {/* Leyenda de modalidades (solo visible cuando hay filtros de modalidad) */}
       {modalidadesInfo.length > 0 && (
         <ModalidadLegend modalidades={modalidadesInfo} />
+      )}
+
+      {/* Login Modal */}
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+
+      {/* Admin Panel */}
+      {showAdmin && isAdmin && (
+        <AdminPanel
+          onClose={() => setShowAdmin(false)}
+          uploadedCSVs={uploadedCSVs}
+          onCSVUpload={handleCSVUpload}
+          onCSVRemove={handleCSVRemove}
+        />
       )}
       
     </div>

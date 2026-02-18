@@ -117,13 +117,17 @@ function reprojectGeometry(geometry: ShapeFeature['geometry']): ShapeFeature['ge
   return geometry;
 }
 
-export function useShapefileLoader(config: ShapeConfig) {
+export function useShapefileLoader(config: ShapeConfig, enabled: boolean = true) {
   const [features, setFeatures] = useState<ShapeFeature[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    // No cargar si no está habilitado o ya se cargó
+    if (!enabled || loaded) return;
+
     const loadShapefile = async () => {
       try {
         setLoading(true);
@@ -228,6 +232,7 @@ export function useShapefileLoader(config: ShapeConfig) {
         }
         
         setFeatures(fixedFeatures);
+        setLoaded(true);
         setLoading(false);
       } catch (err) {
         console.error(`[${config.name}] Error cargando shapefile:`, err);
@@ -237,7 +242,7 @@ export function useShapefileLoader(config: ShapeConfig) {
     };
 
     loadShapefile();
-  }, [config.basePath, config.fileName, config.name]);
+  }, [config.basePath, config.fileName, config.name, enabled, loaded]);
 
   return { features, loading, error, fields, config };
 }

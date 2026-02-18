@@ -24,13 +24,16 @@ export interface DesapMunicipioData {
  * Hook para cargar datos de desapariciones del CSV Base_Desap_TasaValores.csv
  * Retorna un Map<CVEGEO, DesapMunicipioData> con los datos agrupados por municipio
  */
-export function useDesapData() {
+export function useDesapData(enabled: boolean = true) {
   const [data, setData] = useState<Map<string, DesapMunicipioData>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [years, setYears] = useState<number[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    if (!enabled || loaded) return;
+
     const loadCSV = async () => {
       try {
         setLoading(true);
@@ -94,6 +97,7 @@ export function useDesapData() {
 
         setData(map);
         setYears(Array.from(yearSet).sort((a, b) => a - b));
+        setLoaded(true);
         setLoading(false);
         console.log(`[DesapCSV] Cargados datos de ${map.size} municipios, años: ${Array.from(yearSet).sort().join(', ')}`);
       } catch (err) {
@@ -104,7 +108,7 @@ export function useDesapData() {
     };
 
     loadCSV();
-  }, []);
+  }, [enabled, loaded]);
 
   return { data, loading, error, years };
 }
