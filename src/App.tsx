@@ -21,6 +21,7 @@ import LayerSelector from './components/LayerSelector';
 import LoginModal from './components/LoginModal';
 import AdminPanel, { type UploadedCSV } from './components/AdminPanel';
 import WelcomeScreen from './components/WelcomeScreen';
+import CorredoresIntro from './components/CorredoresIntro';
 import { useAuth } from './contexts/AuthContext';
 import { createFosasLayer, createModalidadPolygons, getModalidadesWithColors } from './layers/FosasLayer';
 import { createMasacresLayer } from './layers/MasacresLayer';
@@ -58,6 +59,7 @@ const INITIAL_VIEW_STATE = {
 function Root() {
   const { isAdmin, isAuthenticated, logout } = useAuth();
   const [showWelcome, setShowWelcome] = useState(true);
+  const [showIntro, setShowIntro] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [uploadedCSVs, setUploadedCSVs] = useState<UploadedCSV[]>([]);
@@ -461,16 +463,33 @@ function Root() {
 
   // Pantalla de bienvenida (después de todos los hooks)
   if (showWelcome) {
-    return <WelcomeScreen onEnter={() => setShowWelcome(false)} />;
+    return (
+      <WelcomeScreen
+        onEnter={() => {
+          setShowWelcome(false);
+          setShowIntro(true);
+          setActiveLayers(['municipios']);
+          setViewState({
+            longitude: -96.6,
+            latitude: 19.3,
+            zoom: 7.5,
+            bearing: 0,
+            pitch: 0,
+            transitionDuration: 1800,
+            transitionInterpolator: new FlyToInterpolator({ speed: 1.2 }),
+          } as any);
+        }}
+      />
+    );
   }
 
   return (
     <div>
       <DeckGL
         pickingRadius={12}
-        controller={{
-          inertia: 150, // Reducido de 250
-          scrollZoom: {speed: 0.01, smooth: false}, // Aumentado speed y desactivado smooth
+        controller={showIntro ? false : {
+          inertia: 150,
+          scrollZoom: {speed: 0.01, smooth: false},
           dragPan: true,
           dragRotate: true,
           doubleClickZoom: true,
@@ -528,6 +547,7 @@ function Root() {
         }}
         layers={layers}
       >
+        {!showIntro && (
         <div className='absolute flex items-center right-4 bottom-[140px] flex-col'>
           <Compass
             bearing={viewState.bearing ?? 0}
@@ -545,7 +565,9 @@ function Root() {
             Inicio
           </button>
         </div>
+        )}
 
+        {!showIntro && (
         <UnifiedFilterPanel
           fosas={fosas}
           masacres={masacres}
@@ -589,6 +611,7 @@ function Root() {
           }}
           onCollapsedChange={setIsPanelCollapsed}
         />
+        )}
 
         {selectedFeature?.type === 'fosa' && (() => {
           const vp = new WebMercatorViewport({
@@ -615,6 +638,7 @@ function Root() {
 
 
       {/* Logos institucionales */}
+      {!showIntro && (
       <div 
         className="absolute top-8 pointer-events-none transition-all duration-300"
         style={{
@@ -627,8 +651,9 @@ function Root() {
           className="h-20"
         />
       </div>
+      )}
 
-      {/* Logo superior derecho + Auth buttons */}
+      {!showIntro && (
       <div className="absolute top-8 right-8 flex items-start gap-3">
         <img
           src={logoIbero}
@@ -673,7 +698,10 @@ function Root() {
         </div>
       </div>
 
-      {/* Leyenda del mapa */}
+      )}
+
+      {/* Controles del mapa (ocultos en pantalla intro) */}
+      {!showIntro && (<>
       <div 
         className="absolute bg-white rounded-lg shadow-lg p-3 pointer-events-auto transition-all duration-300" 
         style={{ 
@@ -784,6 +812,16 @@ function Root() {
       {/* Leyenda de modalidades (solo visible cuando hay filtros de modalidad) */}
       {modalidadesInfo.length > 0 && (
         <ModalidadLegend modalidades={modalidadesInfo} />
+      )}
+      </>)}
+
+      {/* Pantalla introductoria de Corredores */}
+      {showIntro && (
+        <CorredoresIntro
+          onEnterMap={() => {
+            setShowIntro(false);
+          }}
+        />
       )}
 
       {/* Login Modal */}
