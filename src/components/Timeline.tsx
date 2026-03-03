@@ -6,11 +6,12 @@ type Props = {
   onChange: (min: number, max: number) => void;
   totalFosas?: number;
   totalMasacres?: number;
+  panelWidth?: number;
 };
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
-const Timeline: React.FC<Props> = ({ years, range, onChange, totalFosas = 0, totalMasacres = 0 }) => {
+const Timeline: React.FC<Props> = ({ years, range, onChange, totalFosas = 0, totalMasacres = 0, panelWidth = 0 }) => {
   const sortedYears = useMemo(() => Array.from(new Set(years || [])).sort((a, b) => a - b), [years]);
   if (!sortedYears.length) return null;
 
@@ -22,6 +23,7 @@ const Timeline: React.FC<Props> = ({ years, range, onChange, totalFosas = 0, tot
   const [mode, setMode] = useState<'all' | 'custom' | 'animation' | 'individual'>('all');
   const [playing, setPlaying] = useState(false);
   const [speedMs, setSpeedMs] = useState<number>(700);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const timerRef = useRef<number | null>(null);
 
   // Drag state
@@ -334,86 +336,83 @@ const Timeline: React.FC<Props> = ({ years, range, onChange, totalFosas = 0, tot
   );
 
   return (
-    <div className=" w-full px-4 bottom-4 h-28 fixed text-[#4a5568]"
+    <div
+      className="fixed bottom-4 text-[#4a5568]"
+      style={{ left: panelWidth + 16, right: 16, height: timelineCollapsed ? 40 : 112 }}
       onWheelCapture={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerMove={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
     >
-      <div className='bg-white flex flex-col gap-5 py-3 px-4 rounded-lg h-full'
-        style={{
-          alignItems: 'stretch',
-        }}
+      <div
+        className='bg-white flex flex-col py-3 px-4 rounded-lg h-full'
+        style={{ gap: timelineCollapsed ? 0 : 20, alignItems: 'stretch' }}
       >
-        {/* Top Row: Title/Range (left) + Controls (right) */}
-        <div className='flex justify-between'>
-          {/* Left Section - Title and Range Display */}
+        {/* Top Row */}
+        <div className='flex justify-between items-center'>
           <div className='text-[#2d3748] flex gap-3 font-semibold items-center'>
             <h3>Línea del tiempo</h3>
-            <div className='font-mono text-xs rounded-2xl py-1 px-2 border border-[#e2e8f0]'>
-              {safeMin === safeMax ? safeMin : `${safeMin} – ${safeMax}`}
-            </div>
-          </div>
-
-          {/* Right Section - Controls */}
-          <div className='flex items-center gap-1'>
-            <ModeButton active={mode === 'all'} onClick={handleModeAll}>Todas</ModeButton>
-            
-            <ModeButton 
-              active={mode === 'individual'} 
-              onClick={() => {
-                setMode('individual');
-                setPlaying(false);
-                // Set to first year only
-                onChange(sortedYears[0], sortedYears[0]);
-              }}
-            >
-              Individual
-            </ModeButton>
-
-            {mode === 'individual' && (
-              <>
-                <ControlButton onClick={() => handleStepYear(-1)} aria-label="Año anterior">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                </ControlButton>
-                <ControlButton onClick={() => handleStepYear(1)} aria-label="Año siguiente">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="9 6 15 12 9 18" />
-                  </svg>
-                </ControlButton>
-              </>
-            )}
-
-            <ModeButton active={mode === 'animation'} onClick={handleModeAnimation}>Anim</ModeButton>
-            
-            {/* Animation Controls */}
-            {mode === 'animation' && (
-              <div className='flex items-center gap-1 mx-4'>
-                  <ControlButton onClick={handlePlayPause} aria-label={playing ? 'Pausar animación' : 'Reproducir animación'}>
-                    {playing ? <IconPause /> : <IconPlay />}
-                  </ControlButton>
-                  <ControlButton onClick={handleReset} aria-label="Reiniciar animación">
-                    <IconReset />
-                  </ControlButton>
-                  
-                  <p className='text-xs'>Vel:</p>
-                  <ModeButton active={speedMs===1200} onClick={() => setSpeedMs(1200)}>L</ModeButton>
-                  <ModeButton active={speedMs===700} onClick={() => setSpeedMs(700)}>M</ModeButton>
-                  <ModeButton active={speedMs===300} onClick={() => setSpeedMs(300)}>R</ModeButton>
+            {!timelineCollapsed && (
+              <div className='font-mono text-xs rounded-2xl py-1 px-2 border border-[#e2e8f0]'>
+                {safeMin === safeMax ? safeMin : `${safeMin} – ${safeMax}`}
               </div>
             )}
+          </div>
 
-            {/* Stats */}
-            <div className='bg-[#3182ce] rounded-lg text-xs font-semibold text-white py-1 px-2'>
-              {yearsInRange.length} períodos • {totalFosas} fosas • {totalMasacres} masacres
-            </div>
+          <div className='flex items-center gap-1'>
+            {!timelineCollapsed && (
+              <>
+                <ModeButton active={mode === 'all'} onClick={handleModeAll}>Todas</ModeButton>
+                <ModeButton
+                  active={mode === 'individual'}
+                  onClick={() => { setMode('individual'); setPlaying(false); onChange(sortedYears[0], sortedYears[0]); }}
+                >
+                  Individual
+                </ModeButton>
+                {mode === 'individual' && (
+                  <>
+                    <ControlButton onClick={() => handleStepYear(-1)} aria-label="Año anterior">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                    </ControlButton>
+                    <ControlButton onClick={() => handleStepYear(1)} aria-label="Año siguiente">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                    </ControlButton>
+                  </>
+                )}
+                <ModeButton active={mode === 'animation'} onClick={handleModeAnimation}>Anim</ModeButton>
+                {mode === 'animation' && (
+                  <div className='flex items-center gap-1 mx-4'>
+                    <ControlButton onClick={handlePlayPause}>{playing ? <IconPause /> : <IconPlay />}</ControlButton>
+                    <ControlButton onClick={handleReset}><IconReset /></ControlButton>
+                    <p className='text-xs'>Vel:</p>
+                    <ModeButton active={speedMs===1200} onClick={() => setSpeedMs(1200)}>L</ModeButton>
+                    <ModeButton active={speedMs===700} onClick={() => setSpeedMs(700)}>M</ModeButton>
+                    <ModeButton active={speedMs===300} onClick={() => setSpeedMs(300)}>R</ModeButton>
+                  </div>
+                )}
+                <div className='bg-[#3182ce] rounded-lg text-xs font-semibold text-white py-1 px-2'>
+                  {yearsInRange.length} períodos · {totalFosas} fosas · {totalMasacres} masacres
+                </div>
+              </>
+            )}
+            {/* Collapse toggle */}
+            <button
+              onClick={() => setTimelineCollapsed(c => !c)}
+              title={timelineCollapsed ? 'Expandir línea de tiempo' : 'Contraer línea de tiempo'}
+              className='ml-1 text-xs font-semibold rounded-md py-1 px-2 border cursor-pointer border-[#e2e8f0] bg-white text-[#2d3748] flex items-center gap-1'
+            >
+              {timelineCollapsed ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Bottom Row: Full-width Slider */}
+        {/* Slider row (hidden when collapsed) */}
+        {!timelineCollapsed && (
         <div className='flex-1 relative mx-4 select-none touch-none text-[#2d3748]'>
           <div
             ref={trackRef}
@@ -509,6 +508,7 @@ const Timeline: React.FC<Props> = ({ years, range, onChange, totalFosas = 0, tot
             ))}
           </div>
         </div>
+        )}
 
       </div>
     </div>

@@ -2,6 +2,52 @@ import { GeoJsonLayer } from '@deck.gl/layers';
 import type { ShapeFeature, ShapeConfig } from '../hooks/useShapefileLoader';
 import type { Feature, Geometry, GeoJsonProperties, FeatureCollection } from 'geojson';
 
+// ─── GeoJSON cache ────────────────────────────────────────────────────────────
+// Keyed by the same `features` array reference — avoids re-triangulation on the
+// GPU when only yearRange/colors change (geometry never changes).
+const geoJsonCache = new WeakMap<ShapeFeature[], FeatureCollection<Geometry, GeoJsonProperties>>();
+
+function getOrBuildFeatureCollection(
+  features: ShapeFeature[],
+  layerId: string,
+  isSingleColor: boolean,
+  baseColor: [number, number, number, number],
+): FeatureCollection<Geometry, GeoJsonProperties> {
+  if (geoJsonCache.has(features)) return geoJsonCache.get(features)!;
+
+  const geoFeatures: Feature<Geometry, GeoJsonProperties>[] = features.map((f, index) => {
+    const fill = isSingleColor ? baseColor : getColorByIndex(layerId, index);
+    const stroke = getBorderColor(fill);
+    return {
+      type: 'Feature' as const,
+      geometry: f.geometry as Geometry,
+      properties: {
+        ...f.properties,
+        _index: index,
+        _layerId: layerId,
+        // Pre-baked static colors (avoids per-frame accessor overhead for non-intensity layers)
+        _fc: fill,   // fillColor
+        _lc: stroke, // lineColor
+      },
+    };
+  });
+
+  const collection: FeatureCollection<Geometry, GeoJsonProperties> = {
+    type: 'FeatureCollection',
+    features: geoFeatures,
+  };
+  geoJsonCache.set(features, collection);
+  return collection;
+}
+
+// Stable module-level accessor functions — deck.gl checks accessor identity; using
+// closures created inside createShapeLayer forces a full attribute rebuild every call.
+const GET_FILL_STATIC = (f: Feature<Geometry, GeoJsonProperties>) =>
+  (f.properties?._fc ?? [65, 105, 225, 80]) as [number, number, number, number];
+
+const GET_LINE_STATIC = (f: Feature<Geometry, GeoJsonProperties>) =>
+  (f.properties?._lc ?? [65, 105, 225, 200]) as [number, number, number, number];
+
 // Paleta de colores para las capas
 const LAYER_COLORS: Record<string, [number, number, number, number][]> = {
   municipios: [
@@ -106,43 +152,51 @@ export function createShapeLayer(
     yearRange = null,
   } = options;
 
-  // Convertir los features a un formato GeoJSON completo
-  const geoFeatures: Feature<Geometry, GeoJsonProperties>[] = features.map((feature, index) => ({
-    type: 'Feature' as const,
-    geometry: feature.geometry as Geometry,
-    properties: {
-      ...feature.properties,
-      _index: index,
-      _layerId: layerId,
-      _layerName: config.name,
-    },
-  }));
-
-  const geojsonData: FeatureCollection<Geometry, GeoJsonProperties> = {
-    type: 'FeatureCollection',
-    features: geoFeatures,
-  };
-
-  // Determinar si es una capa de un solo color o multicolor
   const isSingleColor = config.color != null;
-  const baseColor = config.color || [65, 105, 225, 80];
-  const baseStroke = config.strokeColor || getBorderColor(baseColor as [number, number, number, number]);
+  const baseColor = (config.color || [65, 105, 225, 80]) as [number, number, number, number];
+  const baseStroke = (config.strokeColor || getBorderColor(baseColor)) as [number, number, number, number];
 
-  // Si es la capa del corredor o desapariciones y hay yearRange, calcular el máximo
-  let maxDesapariciones = 0;
-  const isCorredorLayer = layerId === 'corredor' && yearRange != null;
+  // ── Use cached GeoJSON so deck.gl never re-triangulates unchanged geometry ──
+  const geojsonData = getOrBuildFeatureCollection(features, layerId, isSingleColor, baseColor);
+
+  // ── Intensity layers (corredor / desapariciones) ───────────────────────────
   const isDesapLayer = layerId === 'desapariciones' && yearRange != null;
-  const useIntensity = isCorredorLayer || isDesapLayer;
+  const useIntensity = (layerId === 'corredor' || layerId === 'desapariciones') && yearRange != null;
   const desapPrefix = isDesapLayer ? '_DESAP_TOTAL_' : 'DPFGE_';
-  
+
+  let maxDesapariciones = 0;
   if (useIntensity) {
-    for (const feature of features) {
-      const total = calcularDesapariciones(feature.properties || {}, yearRange, desapPrefix);
-      if (total > maxDesapariciones) {
-        maxDesapariciones = total;
-      }
+    for (const f of features) {
+      const total = calcularDesapariciones(f.properties || {}, yearRange, desapPrefix);
+      if (total > maxDesapariciones) maxDesapariciones = total;
     }
   }
+
+  // For intensity layers the colors change with yearRange but geometry never does.
+  // We use updateTriggers so deck.gl only re-uploads the color attribute, not the
+  // vertex buffers.
+  const fillAccessor = useIntensity
+    ? (feature: Feature<Geometry, GeoJsonProperties>) => {
+        if (!feature.properties) return baseColor;
+        return getColorByIntensity(
+          baseColor,
+          calcularDesapariciones(feature.properties, yearRange, desapPrefix),
+          maxDesapariciones,
+        );
+      }
+    : GET_FILL_STATIC;  // stable reference — no attribute rebuild on re-render
+
+  const lineAccessor = useIntensity
+    ? (feature: Feature<Geometry, GeoJsonProperties>) => {
+        if (!feature.properties) return baseStroke;
+        const fc = getColorByIntensity(
+          baseColor,
+          calcularDesapariciones(feature.properties, yearRange, desapPrefix),
+          maxDesapariciones,
+        );
+        return getBorderColor(fc);
+      }
+    : GET_LINE_STATIC;
 
   return new GeoJsonLayer({
     id: `shape-layer-${layerId}`,
@@ -153,50 +207,19 @@ export function createShapeLayer(
     visible,
     autoHighlight: true,
     highlightColor,
-    // Forzar actualización cuando cambia yearRange
+    // deck.gl only re-uploads color buffers when these change — geometry is untouched
     updateTriggers: {
-      getFillColor: [yearRange],
-      getLineColor: [yearRange],
+      getFillColor: useIntensity ? [yearRange] : [],
+      getLineColor: useIntensity ? [yearRange] : [],
     },
-    getFillColor: (feature: Feature<Geometry, GeoJsonProperties>) => {
-      // Si es capa con yearRange (corredor o desapariciones), usar intensidad
-      if (useIntensity && feature.properties) {
-        const desapariciones = calcularDesapariciones(feature.properties, yearRange, desapPrefix);
-        return getColorByIntensity(
-          baseColor as [number, number, number, number],
-          desapariciones,
-          maxDesapariciones
-        );
-      }
-      
-      if (isSingleColor) {
-        return baseColor as [number, number, number, number];
-      }
-      const index = feature.properties?._index ?? 0;
-      return getColorByIndex(layerId, index);
-    },
-    getLineColor: (feature: Feature<Geometry, GeoJsonProperties>) => {
-      // Si es capa con yearRange (corredor o desapariciones), usar intensidad
-      if (useIntensity && feature.properties) {
-        const desapariciones = calcularDesapariciones(feature.properties, yearRange, desapPrefix);
-        const fillColor = getColorByIntensity(
-          baseColor as [number, number, number, number],
-          desapariciones,
-          maxDesapariciones
-        );
-        return getBorderColor(fillColor);
-      }
-      
-      if (isSingleColor) {
-        return baseStroke as [number, number, number, number];
-      }
-      const index = feature.properties?._index ?? 0;
-      const fillColor = getColorByIndex(layerId, index);
-      return getBorderColor(fillColor);
-    },
-    getLineWidth: 2,
+    getFillColor: fillAccessor,
+    getLineColor: lineAccessor,
+    getLineWidth: 1,
+    lineWidthUnits: 'pixels',   // avoids per-vertex width calculation in world-space
     lineWidthMinPixels: 1,
+    lineWidthMaxPixels: 2,
     extruded: false,
-    onClick,
+    // 2D only — skip depth testing (cheaper render pass)
+    parameters: { depthTest: false } as any,    onClick,
   });
 }

@@ -5,7 +5,8 @@
 // https://github.com/visgl/deck.gl/tree/9.1-release/examples/get-started/react
 // https://d2ad6b4ur7yvpq.cloudfront.net
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { bbox, centroid } from '@turf/turf';
 import {DeckGL} from 'deck.gl';
 // import {CompassWidget} from '@deck.gl/react';
 import '@deck.gl/widgets/stylesheet.css';
@@ -17,7 +18,6 @@ import Compass from './components/Compass';
 import FosaPopup from './components/FosaPopup';
 import MasacrePopup from './components/MasacrePopup';
 import MunicipioPopup, { type MunicipioProperties } from './components/MunicipioPopup';
-import LayerSelector from './components/LayerSelector';
 import LoginModal from './components/LoginModal';
 import AdminPanel, { type UploadedCSV } from './components/AdminPanel';
 import WelcomeScreen from './components/WelcomeScreen';
@@ -28,7 +28,7 @@ import { createMasacresLayer } from './layers/MasacresLayer';
 import { createShapeLayer } from './layers/ShapeLayer';
 import { useFosasData } from './hooks/useFosasData';
 import { useMasacresData, type MasacreRecord } from './hooks/useMasacresData';
-import { useShapefileLoader, LAYER_CONFIGS, type ShapeFeature } from './hooks/useShapefileLoader';
+import { useShapefileLoader, LAYER_CONFIGS } from './hooks/useShapefileLoader';
 import { useDesapData } from './hooks/useDesapData';
 import type { FosaRecord } from './hooks/useFosasData';
 import UnifiedFilterPanel, { type UnifiedFilters } from './components/UnifiedFilterPanel';
@@ -46,6 +46,8 @@ type SelectedFeature =
 // source: Natural Earth http://www.naturalearthdata.com/ via geojson.xyz
 // const COUNTRIES = 'https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_50m_admin_0_scale_rank.geojson'; 
 
+
+const PANEL_W = 270;
 
 const INITIAL_VIEW_STATE = {
   longitude: -102,
@@ -113,13 +115,20 @@ function Root() {
       });
   }, [municipiosData.features, municipiosData.loading, desapCSV.data, desapCSV.loading]);
   
-  // Map de datos de capas para fácil acceso
-  const shapeLayersData: Record<string, { features: ShapeFeature[]; loading: boolean }> = {
+  // useMemo so the reference stays stable between renders — prevents layers useMemo from
+  // re-running when unrelated state (panel collapse, selectedFeature, etc.) changes.
+  const shapeLayersData = useMemo(() => ({
     municipios: { features: municipiosData.features, loading: municipiosData.loading },
     corredor: { features: corredorData.features, loading: corredorData.loading },
     desapariciones: { features: desapFeatures, loading: municipiosData.loading || desapCSV.loading },
     homicidio_doloso: { features: homicidioDolosoData.features, loading: homicidioDolosoData.loading },
-  };
+  } as Record<string, { features: any[]; loading: boolean }>), [
+    municipiosData.features, municipiosData.loading,
+    corredorData.features, corredorData.loading,
+    desapFeatures,
+    desapCSV.loading,
+    homicidioDolosoData.features, homicidioDolosoData.loading,
+  ]);
   
   const loadingLayers = Object.entries(shapeLayersData)
     .filter(([, data]) => data.loading)
@@ -139,6 +148,15 @@ function Root() {
   });
   const [is3D, setIs3D] = useState<boolean>(false);
   const [yearRange, setYearRange] = useState<[number, number] | null>(null);
+  // Debounced yearRange: only used for the expensive layers useMemo so dragging
+  // the slider stays smooth but GPU layer rebuilds happen at most every 100 ms.
+  const [debouncedYearRange, setDebouncedYearRange] = useState<[number, number] | null>(null);
+  const yearRangeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (yearRangeDebounceRef.current) clearTimeout(yearRangeDebounceRef.current);
+    yearRangeDebounceRef.current = setTimeout(() => setDebouncedYearRange(yearRange), 100);
+    return () => { if (yearRangeDebounceRef.current) clearTimeout(yearRangeDebounceRef.current); };
+  }, [yearRange]);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
 
   useEffect(() => {
@@ -316,13 +334,14 @@ function Root() {
     }
   }, [allYears, yearRange]);
 
-  // When yearRange changes, sync filters.anio with all years inside range
+  // When debouncedYearRange changes, sync filters.anio — uses debounced value so
+  // re-filtering fosas/masacres doesn't happen on every drag pixel.
   useEffect(() => {
-    if (!allYears.length || !yearRange) return;
-    const [minY, maxY] = yearRange;
+    if (!allYears.length || !debouncedYearRange) return;
+    const [minY, maxY] = debouncedYearRange;
     const selectedYears = allYears.filter(y => y >= minY && y <= maxY).map(String);
     setFilters(prev => ({ ...prev, anio: selectedYears }));
-  }, [yearRange, allYears]);
+  }, [debouncedYearRange, allYears]);
 
   // Calcular modalidades visibles para la leyenda
   const modalidadesInfo = useMemo(() => {
@@ -358,14 +377,30 @@ function Root() {
             visible: true,
             pickable: true,
             highlightColor: [255, 255, 100, 150],
-            // Pasar yearRange para capas con datos de desapariciones
-            yearRange: (config.id === 'corredor' || config.id === 'desapariciones') ? yearRange : null,
+            // Pasar debouncedYearRange para evitar recálculo GPU en cada pixel del slider
+            yearRange: (config.id === 'corredor' || config.id === 'desapariciones') ? debouncedYearRange : null,
             onClick: (info: any) => {
               if (info?.object?.properties) {
                 setSelectedFeature({ 
                   type: 'municipio', 
                   properties: info.object.properties as MunicipioProperties 
                 });
+                try {
+                  const feat = info.object;
+                  const center = centroid(feat);
+                  const [lng, lat] = center.geometry.coordinates;
+                  const bounds = bbox(feat);
+                  const span = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
+                  const zoom = span < 0.15 ? 12 : span < 0.4 ? 10.5 : 9;
+                  setViewState(vs => ({
+                    ...vs,
+                    longitude: lng,
+                    latitude: lat,
+                    zoom,
+                    transitionDuration: 800,
+                    transitionInterpolator: new FlyToInterpolator(),
+                  }));
+                } catch { /* ignore bad geometries */ }
               }
             },
           }));
@@ -458,7 +493,7 @@ function Root() {
     }
 
     return baseLayers;
-  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, yearRange]);
+  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange]);
     
 
   // Pantalla de bienvenida (después de todos los hooks)
@@ -610,6 +645,16 @@ function Root() {
             setSelectedFeature({ type: 'masacre', rec: m });
           }}
           onCollapsedChange={setIsPanelCollapsed}
+          layers={LAYER_CONFIGS}
+          activeLayers={activeLayers}
+          onToggleLayer={(layerId) => {
+            setActiveLayers(prev =>
+              prev.includes(layerId)
+                ? prev.filter(id => id !== layerId)
+                : [...prev, layerId]
+            );
+          }}
+          loadingLayers={loadingLayers}
         />
         )}
 
@@ -642,7 +687,7 @@ function Root() {
       <div 
         className="absolute top-8 pointer-events-none transition-all duration-300"
         style={{
-          left: isPanelCollapsed ? '80px' : '328px'
+          left: isPanelCollapsed ? 16 : PANEL_W + 16
         }}
       >
         <img
@@ -702,63 +747,12 @@ function Root() {
 
       {/* Controles del mapa (ocultos en pantalla intro) */}
       {!showIntro && (<>
-      <div 
-        className="absolute bg-white rounded-lg shadow-lg p-3 pointer-events-auto transition-all duration-300" 
-        style={{ 
-          zIndex: 1001,
-          left: isPanelCollapsed ? '80px' : '328px',
-          bottom: '280px'
-        }}
-      >
-        <div className="text-sm font-semibold mb-2 text-gray-800">Leyenda</div>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-red-500 border-2 border-red-700"></div>
-            <span className="text-xs text-gray-700">Fosas Clandestinas</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: 'rgb(155, 89, 182)', border: '2px solid rgb(75, 0, 130)' }}></div>
-            <span className="text-xs text-gray-700">Masacres</span>
-          </div>
-          {/* Mostrar capas activas en la leyenda */}
-          {LAYER_CONFIGS.filter(c => activeLayers.includes(c.id)).map(config => (
-            <div key={config.id} className="flex items-center gap-2">
-              <div 
-                className="w-4 h-4 rounded" 
-                style={{ 
-                  backgroundColor: config.color 
-                    ? `rgba(${config.color[0]}, ${config.color[1]}, ${config.color[2]}, 0.5)` 
-                    : 'rgba(65, 105, 225, 0.5)', 
-                  border: config.strokeColor 
-                    ? `2px solid rgba(${config.strokeColor[0]}, ${config.strokeColor[1]}, ${config.strokeColor[2]}, 0.8)` 
-                    : '2px solid rgba(65, 105, 225, 0.8)' 
-                }}
-              ></div>
-              <span className="text-xs text-gray-700">{config.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Selector de capas de polígonos */}
-      <LayerSelector
-        layers={LAYER_CONFIGS}
-        activeLayers={activeLayers}
-        onToggleLayer={(layerId) => {
-          setActiveLayers(prev => 
-            prev.includes(layerId) 
-              ? prev.filter(id => id !== layerId)
-              : [...prev, layerId]
-          );
-        }}
-        loadingLayers={loadingLayers}
-      />
 
       {/* Botones de control */}
       <div 
         className='absolute flex flex-col gap-2 transition-all duration-300'
         style={{
-          left: isPanelCollapsed ? '80px' : '328px',
+          left: isPanelCollapsed ? 16 : PANEL_W + 16,
           bottom: '140px'
         }}
       >
@@ -806,6 +800,7 @@ function Root() {
           onChange={(min: number, max: number) => setYearRange([min, max])}
           totalFosas={filteredFosas.length}
           totalMasacres={filteredMasacres.length}
+          panelWidth={isPanelCollapsed ? 0 : PANEL_W}
         />
       )}
 

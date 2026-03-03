@@ -161,12 +161,18 @@ export function createFosasLayer(fosas: FosaRecord[]): Layer {
     data: fosas,
     getPosition: (d) => d.position,
     getFillColor: [255, 0, 0, 220],
-    radiusMinPixels: 6,
-    stroked: true,
     getLineColor: [255, 255, 255, 255],
+    getRadius: 7,
+    radiusUnits: 'pixels',        // constant screen-size — no world-space radius math
+    radiusMinPixels: 4,
+    radiusMaxPixels: 18,
     lineWidthMinPixels: 1.2,
+    stroked: true,
     pickable: true,
+    autoHighlight: true,
+    highlightColor: [255, 255, 0, 120],
     visible: fosas.length > 0,
+    parameters: { depthTest: false } as any, // 2D layer — skip depth buffer
   });
 }
 
