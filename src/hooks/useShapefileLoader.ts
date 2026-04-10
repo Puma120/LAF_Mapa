@@ -22,6 +22,8 @@ export interface ShapeConfig {
   filterField?: string;
   /** Lista de valores permitidos para el campo de filtro */
   filterValues?: string[];
+  /** Si es sub-capa, ID del layer padre (para submenú de violencia) */
+  parentId?: string;
 }
 
 // Función para corregir encoding corrupto (UTF-8 mal interpretado como Latin-1)
@@ -295,6 +297,7 @@ export const LAYER_CONFIGS: ShapeConfig[] = [
     fileName: '21mun',
     color: [255, 20, 147, 80],
     strokeColor: [255, 20, 147, 180],
+    parentId: 'corredor',
   },
   {
     id: 'homicidio_doloso',
@@ -303,5 +306,6 @@ export const LAYER_CONFIGS: ShapeConfig[] = [
     fileName: 'Homicidio Doloso',
     color: [255, 140, 0, 100],
     strokeColor: [255, 140, 0, 220],
+    parentId: 'corredor',
   },
 ];

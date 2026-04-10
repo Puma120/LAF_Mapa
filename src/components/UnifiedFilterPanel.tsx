@@ -2,7 +2,6 @@
 import type { FosaRecord } from '../hooks/useFosasData';
 import type { MasacreRecord } from '../hooks/useMasacresData';
 import type { ShapeConfig } from '../hooks/useShapefileLoader';
-import logoLAF from '../assets/Logo-LAF-Negro.png';
 
 export type UnifiedFilters = {
   anio: string[];
@@ -128,9 +127,9 @@ export default function UnifiedFilterPanel({
         onWheel={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ padding: '16px 18px 12px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-            <img src={logoLAF} alt="LAF" style={{ height: 36, objectFit: 'contain' }} />
+        <div style={{ padding: '12px 18px 10px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Panel de capas</span>
             <button
               onClick={() => handleCollapse(true)}
               title="Contraer panel"
@@ -145,9 +144,6 @@ export default function UnifiedFilterPanel({
               </svg>
             </button>
           </div>
-          <p style={{ fontSize: 10, color: '#6b7280', margin: '2px 0 0', fontWeight: 500, letterSpacing: '0.03em' }}>
-            Laboratorio de Arquitectura Forense
-          </p>
         </div>
 
         <div style={{ height: 1, background: '#e5e7eb', flexShrink: 0 }} />
@@ -247,33 +243,73 @@ export default function UnifiedFilterPanel({
               Seleccionar capas
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {layers.map(layer => {
+              {layers.filter(l => !l.parentId).map(layer => {
                 const isActive = activeLayers.includes(layer.id);
                 const isLoading = loadingLayers.includes(layer.id);
+                const childLayers = layers.filter(l => l.parentId === layer.id);
                 return (
-                  <label key={layer.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                      fontSize: 13, color: '#111827',
-                      background: isActive ? '#f0f7ff' : '#f9fafb',
-                      border: `1px solid ${isActive ? '#bfdbfe' : '#e5e7eb'}`,
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    <div style={{ width: 12, height: 12, borderRadius: 3, flexShrink: 0, ...layerDotStyle(layer) }} />
-                    <span style={{ flex: 1, fontWeight: isActive ? 600 : 400 }}>{layer.name}</span>
-                    {isLoading ? (
-                      <svg style={{ width: 14, height: 14, animation: 'spin 1s linear infinite', color: '#3b82f6' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <input type="checkbox" checked={isActive} onChange={() => onToggleLayer(layer.id)}
-                        onClick={e => e.stopPropagation()}
-                        style={{ width: 14, height: 14, accentColor: '#3b82f6', cursor: 'pointer' }} />
+                  <div key={layer.id}>
+                    <label
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                        fontSize: 13, color: '#111827',
+                        background: isActive ? '#f0f7ff' : '#f9fafb',
+                        border: `1px solid ${isActive ? '#bfdbfe' : '#e5e7eb'}`,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      <div style={{ width: 12, height: 12, borderRadius: 3, flexShrink: 0, ...layerDotStyle(layer) }} />
+                      <span style={{ flex: 1, fontWeight: isActive ? 600 : 400 }}>{layer.name}</span>
+                      {isLoading ? (
+                        <svg style={{ width: 14, height: 14, animation: 'spin 1s linear infinite', color: '#3b82f6' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <input type="checkbox" checked={isActive} onChange={() => onToggleLayer(layer.id)}
+                          onClick={e => e.stopPropagation()}
+                          style={{ width: 14, height: 14, accentColor: '#3b82f6', cursor: 'pointer' }} />
+                      )}
+                    </label>
+                    {/* Sub-menu for child layers (violence types) */}
+                    {isActive && childLayers.length > 0 && (
+                      <div style={{ marginLeft: 18, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                          Tipo de violencia
+                        </p>
+                        {childLayers.map(child => {
+                          const childActive = activeLayers.includes(child.id);
+                          const childLoading = loadingLayers.includes(child.id);
+                          return (
+                            <label key={child.id}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+                                fontSize: 12, color: '#111827',
+                                background: childActive ? '#fef3f2' : '#fafafa',
+                                border: `1px solid ${childActive ? '#fecaca' : '#e5e7eb'}`,
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              <div style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, ...layerDotStyle(child) }} />
+                              <span style={{ flex: 1, fontWeight: childActive ? 600 : 400 }}>{child.name}</span>
+                              {childLoading ? (
+                                <svg style={{ width: 12, height: 12, animation: 'spin 1s linear infinite', color: '#3b82f6' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                              ) : (
+                                <input type="checkbox" checked={childActive} onChange={() => onToggleLayer(child.id)}
+                                  onClick={e => e.stopPropagation()}
+                                  style={{ width: 13, height: 13, accentColor: '#ef4444', cursor: 'pointer' }} />
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
                     )}
-                  </label>
+                  </div>
                 );
               })}
             </div>

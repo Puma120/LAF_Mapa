@@ -62,9 +62,16 @@ function Root() {
   const { isAdmin, isAuthenticated, logout } = useAuth();
   const [showWelcome, setShowWelcome] = useState(true);
   const [showIntro, setShowIntro] = useState(false);
+  const [showAmozoc, setShowAmozoc] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [uploadedCSVs, setUploadedCSVs] = useState<UploadedCSV[]>([]);
+  // Save state before entering info/amozoc mode so we can restore on exit
+  const savedStateRef = useRef<{
+    activeLayers: string[];
+    filters: UnifiedFilters;
+    viewState: any;
+  } | null>(null);
 
   const handleCSVUpload = useCallback((csv: UploadedCSV) => {
     setUploadedCSVs(prev => [...prev, csv]);
@@ -158,6 +165,46 @@ function Root() {
     return () => { if (yearRangeDebounceRef.current) clearTimeout(yearRangeDebounceRef.current); };
   }, [yearRange]);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+
+  // Enter info / corredores overlay mode (from ? button)
+  const enterInfoMode = useCallback(() => {
+    savedStateRef.current = { activeLayers, filters, viewState };
+    setShowIntro(true);
+    setActiveLayers(['desapariciones']);
+    setFilters(prev => ({ ...prev, showFosas: false, showMasacres: false }));
+    setViewState({
+      longitude: -95.9, latitude: 19.2, zoom: 7.2,
+      bearing: 0, pitch: 0,
+      transitionDuration: 1200,
+      transitionInterpolator: new FlyToInterpolator(),
+    } as any);
+  }, [activeLayers, filters, viewState]);
+
+  // Enter Caso Amozoc isolated view
+  const enterAmozocMode = useCallback(() => {
+    savedStateRef.current = { activeLayers, filters, viewState };
+    setShowAmozoc(true);
+    setActiveLayers(['municipios']);
+    setFilters(prev => ({ ...prev, municipio: ['Amozoc'], showFosas: true, showMasacres: true }));
+    setViewState({
+      longitude: -98.05, latitude: 19.04, zoom: 12,
+      bearing: 0, pitch: 0,
+      transitionDuration: 1200,
+      transitionInterpolator: new FlyToInterpolator(),
+    } as any);
+  }, [activeLayers, filters, viewState]);
+
+  // Exit Caso Amozoc isolated view
+  const exitAmozocMode = useCallback(() => {
+    setShowAmozoc(false);
+    const saved = savedStateRef.current;
+    if (saved) {
+      setActiveLayers(saved.activeLayers);
+      setFilters(saved.filters);
+      setViewState({ ...saved.viewState, transitionDuration: 1200, transitionInterpolator: new FlyToInterpolator() });
+      savedStateRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line
@@ -502,12 +549,11 @@ function Root() {
       <WelcomeScreen
         onEnter={() => {
           setShowWelcome(false);
-          setShowIntro(true);
           setActiveLayers(['municipios']);
           setViewState({
-            longitude: -96.6,
-            latitude: 19.3,
-            zoom: 7.5,
+            longitude: -98.2,
+            latitude: 19.0,
+            zoom: 7.8,
             bearing: 0,
             pitch: 0,
             transitionDuration: 1800,
@@ -690,11 +736,14 @@ function Root() {
           left: isPanelCollapsed ? 16 : PANEL_W + 16
         }}
       >
-        <img
-          src={logoLAF}
-          alt="LAF"
-          className="h-20"
-        />
+        {showAmozoc ? (
+          <div className="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-5 py-3">
+            <h2 className="text-lg font-bold text-gray-900">Caso Amozoc</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Vista municipal aislada</p>
+          </div>
+        ) : (
+          <img src={logoLAF} alt="LAF" className="h-20" />
+        )}
       </div>
       )}
 
@@ -705,6 +754,39 @@ function Root() {
           alt="IBERO Puebla"
           className="h-14 pointer-events-none"
         />
+
+        {/* ? button + Caso Amozoc (hidden during Amozoc mode) */}
+        {!showAmozoc && (
+          <div className="flex flex-col gap-2 pointer-events-auto">
+            <button
+              onClick={enterInfoMode}
+              title="Información sobre corredores"
+              className="w-8 h-8 bg-white/90 hover:bg-white text-gray-700 text-sm font-bold rounded-full shadow-lg transition-colors border border-gray-200 flex items-center justify-center cursor-pointer"
+            >
+              ?
+            </button>
+            <button
+              onClick={enterAmozocMode}
+              className="px-3 py-1.5 bg-red-700/90 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-lg transition-colors cursor-pointer"
+            >
+              Caso Amozoc
+            </button>
+          </div>
+        )}
+
+        {/* Back button during Amozoc mode */}
+        {showAmozoc && (
+          <button
+            onClick={exitAmozocMode}
+            className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-gray-700 text-xs font-medium rounded-lg shadow-lg transition-colors border border-gray-200 cursor-pointer"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+            </svg>
+            Volver al mapa
+          </button>
+        )}
+
         <div className="flex flex-col gap-2 pointer-events-auto">
           {isAuthenticated ? (
             <>
@@ -815,6 +897,13 @@ function Root() {
         <CorredoresIntro
           onEnterMap={() => {
             setShowIntro(false);
+            const saved = savedStateRef.current;
+            if (saved) {
+              setActiveLayers(saved.activeLayers);
+              setFilters(saved.filters);
+              setViewState({ ...saved.viewState, transitionDuration: 1200, transitionInterpolator: new FlyToInterpolator() });
+              savedStateRef.current = null;
+            }
           }}
         />
       )}
