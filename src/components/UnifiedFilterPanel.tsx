@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+﻿import { useMemo, useState, useCallback } from 'react';
 import type { FosaRecord } from '../hooks/useFosasData';
 import type { MasacreRecord } from '../hooks/useMasacresData';
 import type { ShapeConfig } from '../hooks/useShapefileLoader';
@@ -29,6 +29,8 @@ type Props = {
   activeLayers: string[];
   onToggleLayer: (layerId: string) => void;
   loadingLayers: string[];
+  onEnterAmozoc?: () => void;
+  onEnterInfo?: () => void;
 };
 
 const PANEL_W = 270;
@@ -48,9 +50,22 @@ export default function UnifiedFilterPanel({
   activeLayers,
   onToggleLayer,
   loadingLayers,
+  onEnterAmozoc,
+  onEnterInfo,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [showCorredorInfo, setShowCorredorInfo] = useState(false);
+  const [expandedCorredores, setExpandedCorredores] = useState<Set<string>>(new Set());
+
+  const toggleCorredorExpanded = useCallback((id: string) => {
+    setExpandedCorredores(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const handleCollapse = (next: boolean) => {
     setCollapsed(next);
@@ -173,7 +188,7 @@ export default function UnifiedFilterPanel({
           {/* MOSTRAR */}
           <div>
             <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Mostrar
+              Mostrar geolocalizaciones
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: '#111827' }}>
@@ -237,16 +252,56 @@ export default function UnifiedFilterPanel({
             )}
           </div>
 
-          {/* SELECCIONAR CAPAS */}
+          {/* CASO AMOZOC */}
+          {onEnterAmozoc && (
           <div>
-            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Seleccionar capas
+            <button
+              onClick={onEnterAmozoc}
+              style={{
+                width: '100%', padding: '10px 12px', fontSize: 13, fontWeight: 600,
+                color: '#fff', background: '#b91c1c', border: 'none', borderRadius: 8,
+                cursor: 'pointer', transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#991b1b')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#b91c1c')}
+            >
+              Caso Amozoc
+            </button>
+          </div>
+          )}
+
+          {/* SELECCIONAR CORREDORES */}
+          <div>
+            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
+              Seleccionar corredores
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowCorredorInfo(!showCorredorInfo); }}
+                title="¿Qué es un corredor?"
+                style={{
+                  width: 16, height: 16, borderRadius: '50%', border: '1px solid #9ca3af',
+                  background: showCorredorInfo ? '#3b82f6' : 'transparent',
+                  color: showCorredorInfo ? '#fff' : '#9ca3af',
+                  fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  lineHeight: 1, padding: 0, flexShrink: 0,
+                }}
+              >?</button>
             </p>
+            {showCorredorInfo && (
+              <div style={{ marginBottom: 8, padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11, color: '#1e40af', lineHeight: 1.5 }}>
+                Un <strong>corredor socioterritorial</strong> es una expresión territorial de un dispositivo de poder que articula elementos espaciales, normativos, institucionales, económicos y delictivos para controlar el territorio.
+                <button onClick={() => onEnterInfo?.()}
+                  style={{ display: 'block', marginTop: 6, fontSize: 10, fontWeight: 600, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                  Leer más
+                </button>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {layers.filter(l => !l.parentId).map(layer => {
                 const isActive = activeLayers.includes(layer.id);
                 const isLoading = loadingLayers.includes(layer.id);
                 const childLayers = layers.filter(l => l.parentId === layer.id);
+                const isExpanded = expandedCorredores.has(layer.id);
                 return (
                   <div key={layer.id}>
                     <label
@@ -261,6 +316,18 @@ export default function UnifiedFilterPanel({
                     >
                       <div style={{ width: 12, height: 12, borderRadius: 3, flexShrink: 0, ...layerDotStyle(layer) }} />
                       <span style={{ flex: 1, fontWeight: isActive ? 600 : 400 }}>{layer.name}</span>
+                      {childLayers.length > 0 && isActive && (
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleCorredorExpanded(layer.id); }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', color: '#6b7280' }}
+                          title={isExpanded ? 'Ocultar capas' : 'Ver capas'}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"
+                            style={{ transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                            <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06z" clipRule="evenodd"/>
+                          </svg>
+                        </button>
+                      )}
                       {isLoading ? (
                         <svg style={{ width: 14, height: 14, animation: 'spin 1s linear infinite', color: '#3b82f6' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -273,7 +340,7 @@ export default function UnifiedFilterPanel({
                       )}
                     </label>
                     {/* Sub-menu for child layers (violence types) */}
-                    {isActive && childLayers.length > 0 && (
+                    {isActive && isExpanded && childLayers.length > 0 && (
                       <div style={{ marginLeft: 18, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
                         <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                           Tipo de violencia

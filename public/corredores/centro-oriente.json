@@ -1,0 +1,23 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Corredor Centro Oriente",
+        "color": "#dc3545"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-97.85, 19.05],
+          [-97.70, 19.00],
+          [-97.50, 18.95],
+          [-97.35, 18.90],
+          [-97.20, 18.85],
+          [-97.10, 18.80]
+        ]
+      }
+    }
+  ]
+}

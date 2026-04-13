@@ -282,7 +282,7 @@ export const LAYER_CONFIGS: ShapeConfig[] = [
   },
   {
     id: 'corredor',
-    name: 'Corredor Esperanza-Santa Rita Tlahuapan',
+    name: 'Centro Oriente',
     basePath: '/Desap2014',
     fileName: 'DESAP2014- TEST28ene',
     color: [220, 53, 69, 100],

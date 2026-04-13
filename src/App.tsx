@@ -22,10 +22,13 @@ import LoginModal from './components/LoginModal';
 import AdminPanel, { type UploadedCSV } from './components/AdminPanel';
 import WelcomeScreen from './components/WelcomeScreen';
 import CorredoresIntro from './components/CorredoresIntro';
+import AmozocPanel from './components/AmozocPanel';
+import AmozocTimelineBar from './components/AmozocTimelineBar';
 import { useAuth } from './contexts/AuthContext';
 import { createFosasLayer, createModalidadPolygons, getModalidadesWithColors } from './layers/FosasLayer';
 import { createMasacresLayer } from './layers/MasacresLayer';
 import { createShapeLayer } from './layers/ShapeLayer';
+import { createCorredorLineLayer, CORREDOR_LINES } from './layers/CorredorLineLayer';
 import { useFosasData } from './hooks/useFosasData';
 import { useMasacresData, type MasacreRecord } from './hooks/useMasacresData';
 import { useShapefileLoader, LAYER_CONFIGS } from './hooks/useShapefileLoader';
@@ -90,13 +93,27 @@ function Root() {
   
   // Cargar capas de shapefiles SOLO cuando están activas (lazy loading)
   // municipios también se necesita si desapariciones está activa (comparten polígonos)
-  const needsMunicipios = activeLayers.includes('municipios') || activeLayers.includes('desapariciones');
+  // O si showAmozoc está activo (necesitamos el polígono de Amozoc)
+  const needsMunicipios = activeLayers.includes('municipios') || activeLayers.includes('desapariciones') || showAmozoc;
   const municipiosData = useShapefileLoader(LAYER_CONFIGS[0], needsMunicipios);
   const corredorData = useShapefileLoader(LAYER_CONFIGS[1], activeLayers.includes('corredor'));
   const homicidioDolosoData = useShapefileLoader(LAYER_CONFIGS[3], activeLayers.includes('homicidio_doloso'));
   
   // Cargar datos de desapariciones del CSV solo cuando la capa está activa
   const desapCSV = useDesapData(activeLayers.includes('desapariciones'));
+
+  // Cargar líneas de corredor (GeoJSON) cuando el corredor está activo
+  const [corredorLineData, setCorredorLineData] = useState<Record<string, any>>({});
+  useEffect(() => {
+    if (!activeLayers.includes('corredor')) return;
+    for (const lineConfig of CORREDOR_LINES) {
+      if (corredorLineData[lineConfig.id]) continue;
+      fetch(lineConfig.url)
+        .then(r => r.json())
+        .then(data => setCorredorLineData(prev => ({ ...prev, [lineConfig.id]: data })))
+        .catch(err => console.error(`Error loading corredor line ${lineConfig.id}:`, err));
+    }
+  }, [activeLayers, corredorLineData]);
   
   // Enriquecer polígonos de municipios con datos del CSV de desapariciones
   const desapFeatures = useMemo(() => {
@@ -122,19 +139,37 @@ function Root() {
       });
   }, [municipiosData.features, municipiosData.loading, desapCSV.data, desapCSV.loading]);
   
+  // Feature de Amozoc filtrado de municipios (para capa verde en modo Amozoc)
+  const amozocFeatures = useMemo(() => {
+    if (!showAmozoc || municipiosData.loading) return [];
+    return municipiosData.features.filter(f => {
+      const name = String(f.properties?.NOMGEO ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return name === 'AMOZOC';
+    });
+  }, [showAmozoc, municipiosData.features, municipiosData.loading]);
+
+  // Filtrar homicidio doloso: solo municipios con información
+  const homicidioDolosoFiltered = useMemo(() => {
+    return homicidioDolosoData.features.filter(f => {
+      const p = f.properties || {};
+      // Mantener solo features que tengan al menos un campo de datos no nulo
+      return p['Tipo de de'] != null || p['Incidencia'] != null;
+    });
+  }, [homicidioDolosoData.features]);
+
   // useMemo so the reference stays stable between renders — prevents layers useMemo from
   // re-running when unrelated state (panel collapse, selectedFeature, etc.) changes.
   const shapeLayersData = useMemo(() => ({
     municipios: { features: municipiosData.features, loading: municipiosData.loading },
     corredor: { features: corredorData.features, loading: corredorData.loading },
     desapariciones: { features: desapFeatures, loading: municipiosData.loading || desapCSV.loading },
-    homicidio_doloso: { features: homicidioDolosoData.features, loading: homicidioDolosoData.loading },
+    homicidio_doloso: { features: homicidioDolosoFiltered, loading: homicidioDolosoData.loading },
   } as Record<string, { features: any[]; loading: boolean }>), [
     municipiosData.features, municipiosData.loading,
     corredorData.features, corredorData.loading,
     desapFeatures,
     desapCSV.loading,
-    homicidioDolosoData.features, homicidioDolosoData.loading,
+    homicidioDolosoFiltered, homicidioDolosoData.loading,
   ]);
   
   const loadingLayers = Object.entries(shapeLayersData)
@@ -150,8 +185,8 @@ function Root() {
     modalidad: [],
     hallazgo: [],
     texto: '',
-    showFosas: true,
-    showMasacres: true,
+    showFosas: false,
+    showMasacres: false,
   });
   const [is3D, setIs3D] = useState<boolean>(false);
   const [yearRange, setYearRange] = useState<[number, number] | null>(null);
@@ -184,7 +219,7 @@ function Root() {
   const enterAmozocMode = useCallback(() => {
     savedStateRef.current = { activeLayers, filters, viewState };
     setShowAmozoc(true);
-    setActiveLayers(['municipios']);
+    setActiveLayers([]);
     setFilters(prev => ({ ...prev, municipio: ['Amozoc'], showFosas: true, showMasacres: true }));
     setViewState({
       longitude: -98.05, latitude: 19.04, zoom: 12,
@@ -455,6 +490,38 @@ function Root() {
       }
     }
 
+    // Capa verde de Amozoc (solo en modo Caso Amozoc)
+    if (showAmozoc && amozocFeatures.length > 0) {
+      baseLayers.push(createShapeLayer('amozoc-highlight', amozocFeatures, {
+        id: 'amozoc-highlight',
+        name: 'Amozoc',
+        basePath: '',
+        fileName: '',
+        color: [34, 197, 94, 120],
+        strokeColor: [22, 163, 74, 240],
+      }, {
+        visible: true,
+        pickable: true,
+        highlightColor: [34, 197, 94, 180],
+        onClick: (info: any) => {
+          if (info?.object?.properties) {
+            setSelectedFeature({ type: 'municipio', properties: info.object.properties as MunicipioProperties });
+          }
+        },
+      }));
+    }
+
+    // Agregar líneas de corredor (SVG/GeoJSON) encima de las capas de polígonos
+    if (activeLayers.includes('corredor')) {
+      for (const lineConfig of CORREDOR_LINES) {
+        const lineData = corredorLineData[lineConfig.id];
+        if (lineData) {
+          const lineLayer = createCorredorLineLayer(lineConfig, lineData, true);
+          if (lineLayer) baseLayers.push(lineLayer);
+        }
+      }
+    }
+
     // Agregar polígonos de modalidad si hay filtros activos
     const modalidadPolygonLayer = createModalidadPolygons(filteredFosas);
     if (modalidadPolygonLayer && filters.modalidad.length > 0) {
@@ -540,7 +607,7 @@ function Root() {
     }
 
     return baseLayers;
-  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange]);
+  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange, corredorLineData, showAmozoc, amozocFeatures]);
     
 
   // Pantalla de bienvenida (después de todos los hooks)
@@ -549,7 +616,8 @@ function Root() {
       <WelcomeScreen
         onEnter={() => {
           setShowWelcome(false);
-          setActiveLayers(['municipios']);
+          // No activar capas ni puntos al entrar
+          setActiveLayers([]);
           setViewState({
             longitude: -98.2,
             latitude: 19.0,
@@ -648,7 +716,7 @@ function Root() {
         </div>
         )}
 
-        {!showIntro && (
+        {!showIntro && !showAmozoc && (
         <UnifiedFilterPanel
           fosas={fosas}
           masacres={masacres}
@@ -701,7 +769,16 @@ function Root() {
             );
           }}
           loadingLayers={loadingLayers}
+          onEnterAmozoc={showAmozoc ? undefined : enterAmozocMode}
+          onEnterInfo={enterInfoMode}
         />
+        )}
+
+        {!showIntro && showAmozoc && (
+          <AmozocPanel
+            onExit={exitAmozocMode}
+            onCollapsedChange={setIsPanelCollapsed}
+          />
         )}
 
         {selectedFeature?.type === 'fosa' && (() => {
@@ -755,7 +832,7 @@ function Root() {
           className="h-14 pointer-events-none"
         />
 
-        {/* ? button + Caso Amozoc (hidden during Amozoc mode) */}
+        {/* ? button (hidden during Amozoc mode) */}
         {!showAmozoc && (
           <div className="flex flex-col gap-2 pointer-events-auto">
             <button
@@ -764,12 +841,6 @@ function Root() {
               className="w-8 h-8 bg-white/90 hover:bg-white text-gray-700 text-sm font-bold rounded-full shadow-lg transition-colors border border-gray-200 flex items-center justify-center cursor-pointer"
             >
               ?
-            </button>
-            <button
-              onClick={enterAmozocMode}
-              className="px-3 py-1.5 bg-red-700/90 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-lg transition-colors cursor-pointer"
-            >
-              Caso Amozoc
             </button>
           </div>
         )}
@@ -874,8 +945,10 @@ function Root() {
         </button>
       </div>
 
-      {/* Timeline inferior */}
-      {allYears.length > 0 && yearRange && (
+      {/* Timeline inferior / Amozoc bar */}
+      {showAmozoc ? (
+        <AmozocTimelineBar panelWidth={isPanelCollapsed ? 0 : PANEL_W} />
+      ) : allYears.length > 0 && yearRange && (
         <Timeline
           years={allYears}
           range={yearRange}
