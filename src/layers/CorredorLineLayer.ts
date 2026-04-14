@@ -43,7 +43,7 @@ export const CORREDOR_LINES: CorredorLineConfig[] = [
   {
     id: 'centro-oriente',
     url: '/corredores/centro-oriente.json',
-    color: [220, 53, 69, 220],
-    width: 3,
+    color: [0, 210, 255, 230],
+    width: 4,
   },
 ];

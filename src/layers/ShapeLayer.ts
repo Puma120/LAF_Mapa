@@ -159,16 +159,17 @@ export function createShapeLayer(
   // ── Use cached GeoJSON so deck.gl never re-triangulates unchanged geometry ──
   const geojsonData = getOrBuildFeatureCollection(features, layerId, isSingleColor, baseColor);
 
-  // ── Intensity layers (corredor / desapariciones) ───────────────────────────
-  const isDesapLayer = layerId === 'desapariciones' && yearRange != null;
-  const useIntensity = (layerId === 'corredor' || layerId === 'desapariciones') && yearRange != null;
-  const desapPrefix = isDesapLayer ? '_DESAP_TOTAL_' : 'DPFGE_';
+  // ── Intensity layers (desapariciones and delito layers use data coloring) ──
+  const isDelitoLayer = layerId.startsWith('delito_');
+  const isDesapCorredor = layerId === 'desapariciones_corredor';
+  const useIntensity = (layerId === 'desapariciones' || isDelitoLayer || isDesapCorredor) && yearRange != null;
+  const intensityPrefix = isDelitoLayer ? '_DELITO_TASA_' : isDesapCorredor ? 'DPFGE_' : '_DESAP_TOTAL_';
 
-  let maxDesapariciones = 0;
+  let maxValue = 0;
   if (useIntensity) {
     for (const f of features) {
-      const total = calcularDesapariciones(f.properties || {}, yearRange, desapPrefix);
-      if (total > maxDesapariciones) maxDesapariciones = total;
+      const total = calcularDesapariciones(f.properties || {}, yearRange, intensityPrefix);
+      if (total > maxValue) maxValue = total;
     }
   }
 
@@ -180,8 +181,8 @@ export function createShapeLayer(
         if (!feature.properties) return baseColor;
         return getColorByIntensity(
           baseColor,
-          calcularDesapariciones(feature.properties, yearRange, desapPrefix),
-          maxDesapariciones,
+          calcularDesapariciones(feature.properties, yearRange, intensityPrefix),
+          maxValue,
         );
       }
     : GET_FILL_STATIC;  // stable reference — no attribute rebuild on re-render
@@ -191,8 +192,8 @@ export function createShapeLayer(
         if (!feature.properties) return baseStroke;
         const fc = getColorByIntensity(
           baseColor,
-          calcularDesapariciones(feature.properties, yearRange, desapPrefix),
-          maxDesapariciones,
+          calcularDesapariciones(feature.properties, yearRange, intensityPrefix),
+          maxValue,
         );
         return getBorderColor(fc);
       }

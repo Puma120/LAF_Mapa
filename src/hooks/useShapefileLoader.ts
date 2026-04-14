@@ -249,7 +249,7 @@ export function useShapefileLoader(config: ShapeConfig, enabled: boolean = true)
   return { features, loading, error, fields, config };
 }
 
-// Municipios del Corredor Esperanza-Santa Rita Tlahuapan
+// Municipios del Corredor Esperanza-Santa Rita Tlahuapan (Centro Oriente)
 const CORREDOR_MUNICIPIOS = [
   'ACAJETE',
   'ACATZINGO',
@@ -270,6 +270,18 @@ const CORREDOR_MUNICIPIOS = [
   'TOCHTEPEC',
 ];
 
+// Municipios del Corredor Centro (del CSV de delitos)
+const CENTRO_MUNICIPIOS = [
+  'CORONANGO',
+  'CUAUTINCHÁN',
+  'CUAUTLANCINGO',
+  'JUAN C. BONILLA',
+  'OCOYUCAN',
+  'PUEBLA',
+  'SAN ANDRÉS CHOLULA',
+  'SAN PEDRO CHOLULA',
+];
+
 // Configuraciones predefinidas de capas
 export const LAYER_CONFIGS: ShapeConfig[] = [
   {
@@ -282,7 +294,7 @@ export const LAYER_CONFIGS: ShapeConfig[] = [
   },
   {
     id: 'corredor',
-    name: 'Centro Oriente',
+    name: 'Corredor Centro Oriente',
     basePath: '/Desap2014',
     fileName: 'DESAP2014- TEST28ene',
     color: [220, 53, 69, 100],
@@ -297,15 +309,27 @@ export const LAYER_CONFIGS: ShapeConfig[] = [
     fileName: '21mun',
     color: [255, 20, 147, 80],
     strokeColor: [255, 20, 147, 180],
+    parentId: 'municipios',
+  },
+  {
+    id: 'desapariciones_corredor',
+    name: 'Desapariciones',
+    basePath: '/Desap2014',
+    fileName: 'DESAP2014- TEST28ene',
+    color: [255, 20, 147, 80],
+    strokeColor: [255, 20, 147, 180],
+    filterField: 'NOMGEO',
+    filterValues: CORREDOR_MUNICIPIOS,
     parentId: 'corredor',
   },
   {
     id: 'homicidio_doloso',
-    name: 'Homicidio Doloso',
-    basePath: '/Homicidio_Doloso',
-    fileName: 'Homicidio Doloso',
+    name: 'Corredor Centro',
+    basePath: '/ShapesBase_Puebla',
+    fileName: '21mun',
     color: [255, 140, 0, 100],
     strokeColor: [255, 140, 0, 220],
-    parentId: 'corredor',
+    filterField: 'NOMGEO',
+    filterValues: CENTRO_MUNICIPIOS,
   },
 ];

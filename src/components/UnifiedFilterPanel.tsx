@@ -2,6 +2,7 @@
 import type { FosaRecord } from '../hooks/useFosasData';
 import type { MasacreRecord } from '../hooks/useMasacresData';
 import type { ShapeConfig } from '../hooks/useShapefileLoader';
+import type { DelitoCategoriaInfo } from '../hooks/useDelitosData';
 
 export type UnifiedFilters = {
   anio: string[];
@@ -29,6 +30,7 @@ type Props = {
   activeLayers: string[];
   onToggleLayer: (layerId: string) => void;
   loadingLayers: string[];
+  delitoCategorias?: DelitoCategoriaInfo[];
   onEnterAmozoc?: () => void;
   onEnterInfo?: () => void;
 };
@@ -50,19 +52,32 @@ export default function UnifiedFilterPanel({
   activeLayers,
   onToggleLayer,
   loadingLayers,
+  delitoCategorias = [],
   onEnterAmozoc,
   onEnterInfo,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [showCorredorInfo, setShowCorredorInfo] = useState(false);
+  const [showFosasInfo, setShowFosasInfo] = useState(false);
+  const [showMasacresInfo, setShowMasacresInfo] = useState(false);
   const [expandedCorredores, setExpandedCorredores] = useState<Set<string>>(new Set());
+  const [expandedCategorias, setExpandedCategorias] = useState<Set<number>>(new Set());
 
   const toggleCorredorExpanded = useCallback((id: string) => {
     setExpandedCorredores(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleCategoriaExpanded = useCallback((catId: number) => {
+    setExpandedCategorias(prev => {
+      const next = new Set(prev);
+      if (next.has(catId)) next.delete(catId);
+      else next.add(catId);
       return next;
     });
   }, []);
@@ -191,24 +206,62 @@ export default function UnifiedFilterPanel({
               Mostrar geolocalizaciones
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: '#111827' }}>
-                <input type="checkbox" checked={value.showFosas}
-                  onChange={e => onChange({ ...value, showFosas: e.target.checked })}
-                  style={{ width: 15, height: 15, accentColor: '#ef4444', cursor: 'pointer' }} />
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', display: 'inline-block', flexShrink: 0 }} />
-                  Fosas Clandestinas
-                </span>
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: '#111827' }}>
-                <input type="checkbox" checked={value.showMasacres}
-                  onChange={e => onChange({ ...value, showMasacres: e.target.checked })}
-                  style={{ width: 15, height: 15, accentColor: '#7c3aed', cursor: 'pointer' }} />
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#9b59b6', border: '2px solid #4b0082', display: 'inline-block', flexShrink: 0 }} />
-                  Masacres
-                </span>
-              </label>
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: '#111827' }}>
+                  <input type="checkbox" checked={value.showFosas}
+                    onChange={e => onChange({ ...value, showFosas: e.target.checked })}
+                    style={{ width: 15, height: 15, accentColor: '#ef4444', cursor: 'pointer' }} />
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', display: 'inline-block', flexShrink: 0 }} />
+                    Fosas Clandestinas
+                  </span>
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFosasInfo(!showFosasInfo); }}
+                    title="¿Qué es una fosa clandestina?"
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', border: '1px solid #9ca3af',
+                      background: showFosasInfo ? '#ef4444' : 'transparent',
+                      color: showFosasInfo ? '#fff' : '#9ca3af',
+                      fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      lineHeight: 1, padding: 0, flexShrink: 0,
+                    }}
+                  >?</button>
+                </label>
+                {showFosasInfo && (
+                  <div style={{ marginTop: 4, marginLeft: 24, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, color: '#991b1b', lineHeight: 1.5 }}>
+                    Una <strong>fosa clandestina</strong> es un entierro ilegal donde se ocultan restos humanos. Los puntos rojos en el mapa representan ubicaciones documentadas de fosas encontradas en el estado de Puebla.
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: '#111827' }}>
+                  <input type="checkbox" checked={value.showMasacres}
+                    onChange={e => onChange({ ...value, showMasacres: e.target.checked })}
+                    style={{ width: 15, height: 15, accentColor: '#7c3aed', cursor: 'pointer' }} />
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#9b59b6', border: '2px solid #4b0082', display: 'inline-block', flexShrink: 0 }} />
+                    Masacres
+                  </span>
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowMasacresInfo(!showMasacresInfo); }}
+                    title="¿Qué es una masacre?"
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', border: '1px solid #9ca3af',
+                      background: showMasacresInfo ? '#7c3aed' : 'transparent',
+                      color: showMasacresInfo ? '#fff' : '#9ca3af',
+                      fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      lineHeight: 1, padding: 0, flexShrink: 0,
+                    }}
+                  >?</button>
+                </label>
+                {showMasacresInfo && (
+                  <div style={{ marginTop: 4, marginLeft: 24, padding: '6px 10px', background: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: 6, fontSize: 11, color: '#4c1d95', lineHeight: 1.5 }}>
+                    Una <strong>masacre</strong> es un evento donde tres o mas personas fueron asesinadas en un mismo hecho. Los puntos morados en el mapa representan eventos documentados en Puebla.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -301,6 +354,8 @@ export default function UnifiedFilterPanel({
                 const isActive = activeLayers.includes(layer.id);
                 const isLoading = loadingLayers.includes(layer.id);
                 const childLayers = layers.filter(l => l.parentId === layer.id);
+                const hasCentroDelitos = layer.id === 'homicidio_doloso';
+                const hasChildren = hasCentroDelitos ? delitoCategorias.length > 0 : childLayers.length > 0;
                 const isExpanded = expandedCorredores.has(layer.id);
                 return (
                   <div key={layer.id}>
@@ -316,7 +371,7 @@ export default function UnifiedFilterPanel({
                     >
                       <div style={{ width: 12, height: 12, borderRadius: 3, flexShrink: 0, ...layerDotStyle(layer) }} />
                       <span style={{ flex: 1, fontWeight: isActive ? 600 : 400 }}>{layer.name}</span>
-                      {childLayers.length > 0 && isActive && (
+                      {hasChildren && isActive && (
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleCorredorExpanded(layer.id); }}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', color: '#6b7280' }}
@@ -339,8 +394,80 @@ export default function UnifiedFilterPanel({
                           style={{ width: 14, height: 14, accentColor: '#3b82f6', cursor: 'pointer' }} />
                       )}
                     </label>
-                    {/* Sub-menu for child layers (violence types) */}
-                    {isActive && isExpanded && childLayers.length > 0 && (
+
+                    {/* Corredor Centro: 3-level hierarchy (Categoria -> Tipo de delito) */}
+                    {hasCentroDelitos && isActive && isExpanded && delitoCategorias.length > 0 && (
+                      <div style={{ marginLeft: 14, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {delitoCategorias.map(cat => {
+                          const isCatExpanded = expandedCategorias.has(cat.id);
+                          const catHasActive = cat.delitos.some(d => activeLayers.includes(`delito_${d}`));
+                          const [cr, cg, cb] = cat.color;
+                          const catColorCSS = `rgb(${cr},${cg},${cb})`;
+                          const catColorBg = `rgba(${cr},${cg},${cb},0.08)`;
+                          const catColorBgActive = `rgba(${cr},${cg},${cb},0.15)`;
+                          const catColorBorder = `rgba(${cr},${cg},${cb},0.3)`;
+                          const catColorBorderActive = `rgba(${cr},${cg},${cb},0.55)`;
+                          return (
+                            <div key={cat.id}>
+                              <button
+                                onClick={() => toggleCategoriaExpanded(cat.id)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                                  padding: '5px 8px', borderRadius: 6, cursor: 'pointer',
+                                  fontSize: 11, fontWeight: 600,
+                                  color: catHasActive ? catColorCSS : '#374151',
+                                  background: catHasActive ? catColorBgActive : catColorBg,
+                                  border: `1px solid ${catHasActive ? catColorBorderActive : catColorBorder}`,
+                                  transition: 'all 0.15s', textAlign: 'left',
+                                }}
+                              >
+                                <span style={{
+                                  width: 8, height: 8, borderRadius: 2, flexShrink: 0,
+                                  background: catColorCSS, opacity: catHasActive ? 1 : 0.5,
+                                }} />
+                                <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor"
+                                  style={{ transition: 'transform 0.2s', transform: isCatExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                                  <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02z" clipRule="evenodd"/>
+                                </svg>
+                                <span style={{ flex: 1, lineHeight: 1.3 }}>{cat.name}</span>
+                              </button>
+                              {isCatExpanded && (
+                                <div style={{ marginLeft: 12, marginTop: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  {cat.delitos.map(delito => {
+                                    const delitoId = `delito_${delito}`;
+                                    const delitoActive = activeLayers.includes(delitoId);
+                                    return (
+                                      <label key={delito}
+                                        style={{
+                                          display: 'flex', alignItems: 'center', gap: 7,
+                                          padding: '4px 7px', borderRadius: 5, cursor: 'pointer',
+                                          fontSize: 11, color: '#111827',
+                                          background: delitoActive ? catColorBgActive : '#fafafa',
+                                          border: `1px solid ${delitoActive ? catColorBorderActive : '#f3f4f6'}`,
+                                          transition: 'all 0.15s',
+                                        }}
+                                      >
+                                        <span style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0,
+                                          background: delitoActive ? `rgba(${cr},${cg},${cb},0.6)` : 'rgba(156,163,175,0.3)',
+                                          border: `1.5px solid ${delitoActive ? `rgba(${cr},${cg},${cb},0.9)` : 'rgba(156,163,175,0.5)'}`,
+                                        }} />
+                                        <span style={{ flex: 1, fontWeight: delitoActive ? 600 : 400 }}>{delito}</span>
+                                        <input type="checkbox" checked={delitoActive} onChange={() => onToggleLayer(delitoId)}
+                                          onClick={e => e.stopPropagation()}
+                                          style={{ width: 12, height: 12, accentColor: catColorCSS, cursor: 'pointer' }} />
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Child layers (e.g. desapariciones under municipios or corredor) */}
+                    {!hasCentroDelitos && isActive && isExpanded && childLayers.length > 0 && (
                       <div style={{ marginLeft: 18, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
                         <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                           Tipo de violencia

@@ -1,5 +1,3 @@
-const PANEL_W = 270;
-
 interface AmozocTimelineBarProps {
   panelWidth: number;
 }

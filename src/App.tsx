@@ -1,4 +1,4 @@
-// deck.gl
+﻿// deck.gl
 // SPDX-License-Identifier: MIT
 // Copyright (c) vis.gl contributors
 
@@ -33,6 +33,7 @@ import { useFosasData } from './hooks/useFosasData';
 import { useMasacresData, type MasacreRecord } from './hooks/useMasacresData';
 import { useShapefileLoader, LAYER_CONFIGS } from './hooks/useShapefileLoader';
 import { useDesapData } from './hooks/useDesapData';
+import { useDelitosData } from './hooks/useDelitosData';
 import type { FosaRecord } from './hooks/useFosasData';
 import UnifiedFilterPanel, { type UnifiedFilters } from './components/UnifiedFilterPanel';
 import Timeline from './components/Timeline';
@@ -94,13 +95,19 @@ function Root() {
   // Cargar capas de shapefiles SOLO cuando están activas (lazy loading)
   // municipios también se necesita si desapariciones está activa (comparten polígonos)
   // O si showAmozoc está activo (necesitamos el polígono de Amozoc)
+  const anyDelitoActive = activeLayers.some(id => id.startsWith('delito_'));
   const needsMunicipios = activeLayers.includes('municipios') || activeLayers.includes('desapariciones') || showAmozoc;
+  const needsCentro = activeLayers.includes('homicidio_doloso') || anyDelitoActive;
   const municipiosData = useShapefileLoader(LAYER_CONFIGS[0], needsMunicipios);
   const corredorData = useShapefileLoader(LAYER_CONFIGS[1], activeLayers.includes('corredor'));
-  const homicidioDolosoData = useShapefileLoader(LAYER_CONFIGS[3], activeLayers.includes('homicidio_doloso'));
+  const desapCorredorData = useShapefileLoader(LAYER_CONFIGS[3], activeLayers.includes('desapariciones_corredor'));
+  const centroData = useShapefileLoader(LAYER_CONFIGS[4], needsCentro);
   
   // Cargar datos de desapariciones del CSV solo cuando la capa está activa
   const desapCSV = useDesapData(activeLayers.includes('desapariciones'));
+
+  // Cargar datos de delitos del corredor Centro cuando está activo
+  const delitosData = useDelitosData(activeLayers.includes('homicidio_doloso') || anyDelitoActive);
 
   // Cargar líneas de corredor (GeoJSON) cuando el corredor está activo
   const [corredorLineData, setCorredorLineData] = useState<Record<string, any>>({});
@@ -148,28 +155,84 @@ function Root() {
     });
   }, [showAmozoc, municipiosData.features, municipiosData.loading]);
 
-  // Filtrar homicidio doloso: solo municipios con información
-  const homicidioDolosoFiltered = useMemo(() => {
-    return homicidioDolosoData.features.filter(f => {
-      const p = f.properties || {};
-      // Mantener solo features que tengan al menos un campo de datos no nulo
-      return p['Tipo de de'] != null || p['Incidencia'] != null;
-    });
-  }, [homicidioDolosoData.features]);
+  // Enriquecer polígonos del corredor Centro con datos de delitos del CSV
+  // Para cada delito activo, crear features con _DELITO_TASA_{year} props
+  const activeDelitoIds = useMemo(() =>
+    activeLayers.filter(id => id.startsWith('delito_')),
+    [activeLayers]
+  );
+
+  // Build lookup: crime type name -> category colors
+  const delitoColorMap = useMemo(() => {
+    const map = new Map<string, { color: [number,number,number,number]; strokeColor: [number,number,number,number] }>();
+    for (const cat of delitosData.categorias) {
+      for (const delito of cat.delitos) {
+        map.set(delito, { color: cat.color, strokeColor: cat.strokeColor });
+      }
+    }
+    return map;
+  }, [delitosData.categorias]);
+
+  const delitoFeaturesMap = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    if (!centroData.features.length || !delitosData.records.length) return map;
+
+    for (const delitoLayerId of activeDelitoIds) {
+      const tipoDelito = delitoLayerId.replace('delito_', '');
+      const delitoRecords = delitosData.records.filter(r => r.TIPO_DE_DELITO === tipoDelito);
+
+      // Group by NOMGEO for fast lookup: { normalizedName -> { year -> record } }
+      const byMuni = new Map<string, Map<number, { tasa: number; incidencia: number; poblacion: number }>>();
+      for (const r of delitoRecords) {
+        const key = r.NOMGEO.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (!byMuni.has(key)) byMuni.set(key, new Map());
+        byMuni.get(key)!.set(r.ANIO, { tasa: r.TASA, incidencia: r.INCIDENCIA, poblacion: r.POBLACION });
+      }
+
+      const enriched = centroData.features.map(f => {
+        const name = String(f.properties?.NOMGEO ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const yearMap = byMuni.get(name);
+        const props = { ...f.properties };
+        if (yearMap) {
+          for (const [year, data] of yearMap) {
+            props[`_DELITO_TASA_${year}`] = data.tasa;
+            props[`_DELITO_INCIDENCIA_${year}`] = data.incidencia;
+            props[`_DELITO_POBLACION_${year}`] = data.poblacion;
+          }
+          props._hasDelitoData = true;
+        }
+        props._delitoType = tipoDelito;
+        return { ...f, properties: props };
+      });
+
+      map[delitoLayerId] = enriched;
+    }
+    return map;
+  }, [centroData.features, delitosData.records, activeDelitoIds]);
 
   // useMemo so the reference stays stable between renders — prevents layers useMemo from
   // re-running when unrelated state (panel collapse, selectedFeature, etc.) changes.
-  const shapeLayersData = useMemo(() => ({
-    municipios: { features: municipiosData.features, loading: municipiosData.loading },
-    corredor: { features: corredorData.features, loading: corredorData.loading },
-    desapariciones: { features: desapFeatures, loading: municipiosData.loading || desapCSV.loading },
-    homicidio_doloso: { features: homicidioDolosoFiltered, loading: homicidioDolosoData.loading },
-  } as Record<string, { features: any[]; loading: boolean }>), [
+  const shapeLayersData = useMemo(() => {
+    const data: Record<string, { features: any[]; loading: boolean }> = {
+      municipios: { features: municipiosData.features, loading: municipiosData.loading },
+      corredor: { features: corredorData.features, loading: corredorData.loading },
+      desapariciones: { features: desapFeatures, loading: municipiosData.loading || desapCSV.loading },
+      desapariciones_corredor: { features: desapCorredorData.features, loading: desapCorredorData.loading },
+      homicidio_doloso: { features: centroData.features, loading: centroData.loading },
+    };
+    // Add delito layers
+    for (const [id, features] of Object.entries(delitoFeaturesMap)) {
+      data[id] = { features, loading: centroData.loading || delitosData.loading };
+    }
+    return data;
+  }, [
     municipiosData.features, municipiosData.loading,
     corredorData.features, corredorData.loading,
     desapFeatures,
     desapCSV.loading,
-    homicidioDolosoFiltered, homicidioDolosoData.loading,
+    desapCorredorData.features, desapCorredorData.loading,
+    centroData.features, centroData.loading,
+    delitoFeaturesMap, delitosData.loading,
   ]);
   
   const loadingLayers = Object.entries(shapeLayersData)
@@ -314,8 +377,6 @@ function Root() {
       const z = get(f.raw, ['ZONA']);
       const mod = get(f.raw, ['MODALIDAD DE FOSA','MODALIDAD']);
       const h = get(f.raw, ['QUIÉN HIZO EL HALLAZGO','QUIEN HIZO EL HALLAZGO']);
-      const desc = get(f.raw, ['DESCRIPCIÓN','Descripcion','DESCRIPCION']);
-
       if (filters.anio.length && !filters.anio.includes(a)) return false;
       if (filters.municipio.length && !filters.municipio.includes(m)) return false;
       if (filters.zona.length && !filters.zona.includes(z)) return false;
@@ -323,7 +384,9 @@ function Root() {
       if (filters.hallazgo.length && !filters.hallazgo.includes(h)) return false;
       if (filters.texto) {
         const q = filters.texto.toLowerCase();
-        if (!desc.toLowerCase().includes(q)) return false;
+        // Buscar en TODOS los campos del registro
+        const allValues = Object.values(f.raw).map(v => String(v ?? '').toLowerCase()).join(' ');
+        if (!allValues.includes(q)) return false;
       }
       return true;
     };
@@ -356,15 +419,14 @@ function Root() {
     const matches = (m: MasacreRecord) => {
       const anio = parseYear(m.raw?.['año'] ?? m.raw?.['fecha']);
       const municipio = get(m.raw, ['Municipio', 'MUNICIPIO', 'municipio']);
-      const texto = [
-        get(m.raw, ['Descripción resumida', 'DESCRIPCIÓN', 'Descripcion', 'DESCRIPCION']),
-        get(m.raw, ['LUGAR', 'Lugar', 'lugar'])
-      ].join(' ').toLowerCase();
-
       // Filtro de año desde la línea del tiempo
       if (filters.anio.length && !filters.anio.includes(anio)) return false;
       if (filters.municipio.length && !filters.municipio.includes(municipio)) return false;
-      if (filters.texto && !texto.includes(filters.texto.toLowerCase())) return false;
+      if (filters.texto) {
+        // Buscar en TODOS los campos del registro
+        const allValues = Object.values(m.raw ?? {}).map(v => String(v ?? '').toLowerCase()).join(' ');
+        if (!allValues.includes(filters.texto.toLowerCase())) return false;
+      }
       return true;
     };
     return masacres.filter(matches);
@@ -455,13 +517,16 @@ function Root() {
       if (activeLayers.includes(config.id)) {
         const layerData = shapeLayersData[config.id];
         if (layerData && layerData.features.length > 0 && !layerData.loading) {
+          // Corredor bases: no popup on click, no intensity
+          const isBaseLayer = config.id === 'corredor' || config.id === 'homicidio_doloso';
+          // Intensity-colored layers
+          const useYearRange = (config.id === 'desapariciones' || config.id === 'desapariciones_corredor') ? debouncedYearRange : null;
           baseLayers.push(createShapeLayer(config.id, layerData.features, config, {
             visible: true,
-            pickable: true,
+            pickable: !isBaseLayer,
             highlightColor: [255, 255, 100, 150],
-            // Pasar debouncedYearRange para evitar recálculo GPU en cada pixel del slider
-            yearRange: (config.id === 'corredor' || config.id === 'desapariciones') ? debouncedYearRange : null,
-            onClick: (info: any) => {
+            yearRange: useYearRange,
+            onClick: isBaseLayer ? undefined : (info: any) => {
               if (info?.object?.properties) {
                 setSelectedFeature({ 
                   type: 'municipio', 
@@ -487,6 +552,36 @@ function Root() {
             },
           }));
         }
+      }
+    }
+
+    // Agregar capas de delitos del corredor (usan polígonos corredor + datos CSV)
+    for (const delitoId of activeDelitoIds) {
+      const layerData = shapeLayersData[delitoId];
+      if (layerData && layerData.features.length > 0 && !layerData.loading) {
+        const tipoDelito = delitoId.replace('delito_', '');
+        const delitoColor = delitoColorMap.get(tipoDelito);
+        baseLayers.push(createShapeLayer(delitoId, layerData.features, {
+          id: delitoId,
+          name: tipoDelito,
+          basePath: '',
+          fileName: '',
+          color: delitoColor?.color ?? [220, 53, 69, 100],
+          strokeColor: delitoColor?.strokeColor ?? [220, 53, 69, 220],
+        }, {
+          visible: true,
+          pickable: true,
+          highlightColor: [255, 255, 100, 150],
+          yearRange: debouncedYearRange,
+          onClick: (info: any) => {
+            if (info?.object?.properties) {
+              setSelectedFeature({
+                type: 'municipio',
+                properties: info.object.properties as MunicipioProperties,
+              });
+            }
+          },
+        }));
       }
     }
 
@@ -607,7 +702,7 @@ function Root() {
     }
 
     return baseLayers;
-  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange, corredorLineData, showAmozoc, amozocFeatures]);
+  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange, corredorLineData, showAmozoc, amozocFeatures, activeDelitoIds]);
     
 
   // Pantalla de bienvenida (después de todos los hooks)
@@ -616,8 +711,8 @@ function Root() {
       <WelcomeScreen
         onEnter={() => {
           setShowWelcome(false);
-          // No activar capas ni puntos al entrar
-          setActiveLayers([]);
+          // Cargar capa de municipios al entrar
+          setActiveLayers(['municipios']);
           setViewState({
             longitude: -98.2,
             latitude: 19.0,
@@ -769,6 +864,7 @@ function Root() {
             );
           }}
           loadingLayers={loadingLayers}
+          delitoCategorias={delitosData.categorias}
           onEnterAmozoc={showAmozoc ? undefined : enterAmozocMode}
           onEnterInfo={enterInfoMode}
         />
