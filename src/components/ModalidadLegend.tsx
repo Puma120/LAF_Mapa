@@ -8,16 +8,19 @@ type ModalidadInfo = {
 
 type Props = {
   modalidades: ModalidadInfo[];
+  left: number;
 };
 
-const ModalidadLegend: React.FC<Props> = ({ modalidades }) => {
+const ModalidadLegend: React.FC<Props> = ({ modalidades, left }) => {
   if (modalidades.length === 0) return null;
 
   return (
     <div
-      className="text-[#2d3748] bottom-[200px] left-82 py-2 px-3.5"
+      className="text-[#2d3748] py-2 px-3.5"
       style={{
         position: 'fixed',
+        left,
+        bottom: '246px',
         background: 'rgba(255, 255, 255, 0.96)',
         backdropFilter: 'blur(8px)',
         border: '1px solid rgba(255, 255, 255, 0.3)',

@@ -39,12 +39,18 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* prevent scrollbars that break deck.gl ResizeObserver */
+}
+
+#root {
+  width: 100%;
+  height: 100%;
 }
 
 @media (prefers-color-scheme: light) {
@@ -418,4 +424,36 @@ body {
 .filter-options::-webkit-scrollbar-thumb:hover,
 .results-list::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Panel de capas — scrollbar personalizado ──────────────────────────────
+   Muy fino (4 px), sin track visible, thumb se ilumina en azul al pasar el
+   cursor. Firefox recibe el equivalente con scrollbar-width / scrollbar-color.
+   ────────────────────────────────────────────────────────────────────────── */
+.panel-scroll-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+
+.panel-scroll-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.panel-scroll-body::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 8px 0;
+}
+
+.panel-scroll-body::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 10px;
+  transition: background 0.25s ease;
+}
+
+.panel-scroll-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.7);
+}
+
+.panel-scroll-body::-webkit-scrollbar-corner {
+  background: transparent;
 }

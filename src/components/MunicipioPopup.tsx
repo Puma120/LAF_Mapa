@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import ChartsModal, { type ChartDataset } from './ChartsModal';
 
 export interface MunicipioProperties {
   CVEGEO?: string;
@@ -146,6 +147,8 @@ function getDelitoPorAnio(
 }
 
 export default function MunicipioPopup({ properties, onClose, yearRange }: Props) {
+  const [chartData, setChartData] = useState<ChartDataset | null>(null);
+
   // Cerrar con tecla Escape para mayor accesibilidad
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -289,7 +292,24 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
             {/* Tabla por año */}
             {desapPorAnio.length > 0 && (
               <div>
-                <p className="text-xs text-[#718096] uppercase tracking-wide mb-2">Desglose por Año</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-[#718096] uppercase tracking-wide m-0">Desglose por Año</p>
+                  <button
+                    onClick={() => {
+                      const data = desapPorAnio.map(d => ({ year: String(d.year), count: d.total }));
+                      const total = desapPorAnio.reduce((s, d) => s + d.total, 0);
+                      const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+                      setChartData({ label: `Desapariciones — ${titleField || 'Municipio'}`, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count });
+                    }}
+                    title="Ver gráfica"
+                    className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 bg-red-50 hover:bg-red-100 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                      <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z" />
+                    </svg>
+                    Gráfica
+                  </button>
+                </div>
                 {/* Encabezado de tabla */}
                 <div className="flex items-center justify-between bg-gray-200 rounded-t-lg px-3 py-1.5 text-xs font-semibold text-gray-600">
                   <span className="w-12">Año</span>
@@ -343,7 +363,24 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
             {/* Tabla por año */}
             {delitoPorAnio.length > 0 && (
               <div>
-                <p className="text-xs text-[#718096] uppercase tracking-wide mb-2">Desglose por Año</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-[#718096] uppercase tracking-wide m-0">Desglose por Año</p>
+                  <button
+                    onClick={() => {
+                      const data = delitoPorAnio.map(d => ({ year: String(d.year), count: d.incidencia }));
+                      const total = delitoPorAnio.reduce((s, d) => s + d.incidencia, 0);
+                      const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+                      setChartData({ label: `${delitoType || 'Delito'} — ${titleField || 'Municipio'}`, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count });
+                    }}
+                    title="Ver gráfica"
+                    className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 bg-red-50 hover:bg-red-100 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                      <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z" />
+                    </svg>
+                    Gráfica
+                  </button>
+                </div>
                 <div className="flex items-center justify-between bg-gray-200 rounded-t-lg px-3 py-1.5 text-xs font-semibold text-gray-600">
                   <span className="w-12">Año</span>
                   <span className="w-16 text-center">Incidencia</span>
@@ -393,7 +430,24 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
 
             {corredorPorAnio.length > 0 && (
               <div>
-                <p className="text-xs text-[#718096] uppercase tracking-wide mb-2">Desglose por Año</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-[#718096] uppercase tracking-wide m-0">Desglose por Año</p>
+                  <button
+                    onClick={() => {
+                      const data = corredorPorAnio.map(d => ({ year: String(d.year), count: d.count }));
+                      const total = corredorPorAnio.reduce((s, d) => s + d.count, 0);
+                      const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+                      setChartData({ label: `Desapariciones — ${titleField || 'Corredor'}`, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count });
+                    }}
+                    title="Ver gráfica"
+                    className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 bg-red-50 hover:bg-red-100 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                      <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z" />
+                    </svg>
+                    Gráfica
+                  </button>
+                </div>
                 <div className="space-y-1 max-h-48 overflow-y-auto">
                   {corredorPorAnio.map(({ year, count }) => (
                     <div 
@@ -448,6 +502,11 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
           </div>
         )}
       </div>
+
+      {/* Chart modal */}
+      {chartData && (
+        <ChartsModal datasets={[chartData]} onClose={() => setChartData(null)} />
+      )}
     </div>
   );
 }

@@ -16,6 +16,8 @@ import { BitmapLayer } from "@deck.gl/layers";
 import type { TileLayerProps } from "@deck.gl/geo-layers";
 import Compass from './components/Compass';
 import FosaPopup from './components/FosaPopup';
+import FosaDetailModal from './components/FosaDetailModal';
+import MasacreDetailModal from './components/MasacreDetailModal';
 import MasacrePopup from './components/MasacrePopup';
 import MunicipioPopup, { type MunicipioProperties } from './components/MunicipioPopup';
 import LoginModal from './components/LoginModal';
@@ -25,7 +27,7 @@ import CorredoresIntro from './components/CorredoresIntro';
 import AmozocPanel from './components/AmozocPanel';
 import AmozocTimelineBar from './components/AmozocTimelineBar';
 import { useAuth } from './contexts/AuthContext';
-import { createFosasLayer, createModalidadPolygons, getModalidadesWithColors } from './layers/FosasLayer';
+import { createFosasLayer, createModalidadPolygons, getModalidadesWithColors, createSearchPolygon } from './layers/FosasLayer';
 import { createMasacresLayer } from './layers/MasacresLayer';
 import { createShapeLayer } from './layers/ShapeLayer';
 import { createCorredorLineLayer, CORREDOR_LINES } from './layers/CorredorLineLayer';
@@ -92,9 +94,9 @@ function Root() {
   // Estado de capas activas (ninguna activa al inicio)
   const [activeLayers, setActiveLayers] = useState<string[]>([]);
   
-  // Cargar capas de shapefiles SOLO cuando están activas (lazy loading)
-  // municipios también se necesita si desapariciones está activa (comparten polígonos)
-  // O si showAmozoc está activo (necesitamos el polígono de Amozoc)
+  // Cargar capas de shapefiles SOLO cuando est�n activas (lazy loading)
+  // municipios tambi�n se necesita si desapariciones est� activa (comparten pol�gonos)
+  // O si showAmozoc est� activo (necesitamos el pol�gono de Amozoc)
   const anyDelitoActive = activeLayers.some(id => id.startsWith('delito_'));
   const needsMunicipios = activeLayers.includes('municipios') || activeLayers.includes('desapariciones') || showAmozoc;
   const needsCentro = activeLayers.includes('homicidio_doloso') || anyDelitoActive;
@@ -103,13 +105,13 @@ function Root() {
   const desapCorredorData = useShapefileLoader(LAYER_CONFIGS[3], activeLayers.includes('desapariciones_corredor'));
   const centroData = useShapefileLoader(LAYER_CONFIGS[4], needsCentro);
   
-  // Cargar datos de desapariciones del CSV solo cuando la capa está activa
+  // Cargar datos de desapariciones del CSV solo cuando la capa est� activa
   const desapCSV = useDesapData(activeLayers.includes('desapariciones'));
 
-  // Cargar datos de delitos del corredor Centro cuando está activo
+  // Cargar datos de delitos del corredor Centro cuando est� activo
   const delitosData = useDelitosData(activeLayers.includes('homicidio_doloso') || anyDelitoActive);
 
-  // Cargar líneas de corredor (GeoJSON) cuando el corredor está activo
+  // Cargar l�neas de corredor (GeoJSON) cuando el corredor est� activo
   const [corredorLineData, setCorredorLineData] = useState<Record<string, any>>({});
   useEffect(() => {
     if (!activeLayers.includes('corredor')) return;
@@ -122,7 +124,7 @@ function Root() {
     }
   }, [activeLayers, corredorLineData]);
   
-  // Enriquecer polígonos de municipios con datos del CSV de desapariciones
+  // Enriquecer pol�gonos de municipios con datos del CSV de desapariciones
   const desapFeatures = useMemo(() => {
     if (municipiosData.loading || desapCSV.loading || !desapCSV.data.size) return [];
     
@@ -132,7 +134,7 @@ function Root() {
         const csvData = desapCSV.data.get(f.properties.CVEGEO)!;
         const props = { ...f.properties };
         
-        // Agregar datos del CSV por año con prefijo _DESAP_
+        // Agregar datos del CSV por a�o con prefijo _DESAP_
         for (const [year, record] of csvData.byYear) {
           props[`_DESAP_TOTAL_${year}`] = record.Total;
           props[`_DESAP_H_${year}`] = record.Hombres;
@@ -155,7 +157,7 @@ function Root() {
     });
   }, [showAmozoc, municipiosData.features, municipiosData.loading]);
 
-  // Enriquecer polígonos del corredor Centro con datos de delitos del CSV
+  // Enriquecer pol�gonos del corredor Centro con datos de delitos del CSV
   // Para cada delito activo, crear features con _DELITO_TASA_{year} props
   const activeDelitoIds = useMemo(() =>
     activeLayers.filter(id => id.startsWith('delito_')),
@@ -210,7 +212,7 @@ function Root() {
     return map;
   }, [centroData.features, delitosData.records, activeDelitoIds]);
 
-  // useMemo so the reference stays stable between renders — prevents layers useMemo from
+  // useMemo so the reference stays stable between renders � prevents layers useMemo from
   // re-running when unrelated state (panel collapse, selectedFeature, etc.) changes.
   const shapeLayersData = useMemo(() => {
     const data: Record<string, { features: any[]; loading: boolean }> = {
@@ -241,6 +243,8 @@ function Root() {
 
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature>(null);
+  const [showFosaDetail, setShowFosaDetail] = useState(false);
+  const [showMasacreDetail, setShowMasacreDetail] = useState(false);
   const [filters, setFilters] = useState<UnifiedFilters>({
     anio: [],
     municipio: [],
@@ -331,7 +335,7 @@ function Root() {
   //   setViewState(vs => ({
   //     ...vs,
   //     pitch: newIs3D ? 30 : 0,
-  //     zoom: newIs3D ? Math.max(vs.zoom ?? 5, 9) : vs.zoom, // Asegurar zoom mínimo para 3D
+  //     zoom: newIs3D ? Math.max(vs.zoom ?? 5, 9) : vs.zoom, // Asegurar zoom m�nimo para 3D
   //   }));
   // }
   
@@ -361,7 +365,7 @@ function Root() {
     const cleanYear = (s: string) => String(s).trim().replace(/\.0+$/, '');
 
     const extractYear = (row: Record<string, any>): string => {
-      const primary = cleanYear(get(row, ['AÑO','Anio','Año','año']));
+      const primary = cleanYear(get(row, ['A�O','Anio','A�o','a�o']));
       if (primary) return primary;
       const fecha = get(row, ['FECHA DEL HALLAZGO','Fecha']);
       if (fecha) {
@@ -375,13 +379,24 @@ function Root() {
       const a = extractYear(f.raw);
       const m = get(f.raw, ['MUNICIPIO','MUNUCUPIO']);
       const z = get(f.raw, ['ZONA']);
-      const mod = get(f.raw, ['MODALIDAD DE FOSA','MODALIDAD']);
-      const h = get(f.raw, ['QUIÉN HIZO EL HALLAZGO','QUIEN HIZO EL HALLAZGO']);
+      const mod = get(f.raw, ['MODALIDAD DE FOSA','MODALIDAD']) || 'Se desconoce';
+      const hRaw = get(f.raw, ['QUIÉN HIZO EL HALLAZGO','QUIEN HIZO EL HALLAZGO']) || 'Se desconoce';
+      // Split compound entries and normalize (same logic as UnifiedFilterPanel)
+      const HALL_NORM: Record<string, string> = {
+        'la voz de los desaparecidos': 'La Voz de los desaparecidos',
+        'colectivo la voz de los desaparecidos': 'La Voz de los desaparecidos',
+        'familias de personas desaparecidas': 'Familiares',
+        'poblador': 'Pobladores',
+      };
+      const hParts = hRaw.split('.')
+        .map((p: string) => p.trim())
+        .filter((p: string) => p.length > 0 && p.length <= 60)
+        .map((p: string) => HALL_NORM[p.toLowerCase()] ?? p);
       if (filters.anio.length && !filters.anio.includes(a)) return false;
       if (filters.municipio.length && !filters.municipio.includes(m)) return false;
       if (filters.zona.length && !filters.zona.includes(z)) return false;
       if (filters.modalidad.length && !filters.modalidad.includes(mod)) return false;
-      if (filters.hallazgo.length && !filters.hallazgo.includes(h)) return false;
+      if (filters.hallazgo.length && !filters.hallazgo.some((sel: string) => hParts.includes(sel))) return false;
       if (filters.texto) {
         const q = filters.texto.toLowerCase();
         // Buscar en TODOS los campos del registro
@@ -417,9 +432,9 @@ function Root() {
     };
     
     const matches = (m: MasacreRecord) => {
-      const anio = parseYear(m.raw?.['año'] ?? m.raw?.['fecha']);
+      const anio = parseYear(m.raw?.['a�o'] ?? m.raw?.['fecha']);
       const municipio = get(m.raw, ['Municipio', 'MUNICIPIO', 'municipio']);
-      // Filtro de año desde la línea del tiempo
+      // Filtro de a�o desde la l�nea del tiempo
       if (filters.anio.length && !filters.anio.includes(anio)) return false;
       if (filters.municipio.length && !filters.municipio.includes(municipio)) return false;
       if (filters.texto) {
@@ -454,17 +469,17 @@ function Root() {
       return null;
     };
 
-    // Años de fosas
+    // A�os de fosas
     for (const f of fosas) {
-      const y1 = parseYear(f.raw?.['AÑO'] ?? f.raw?.['Anio'] ?? f.raw?.['Año'] ?? f.raw?.['año']);
+      const y1 = parseYear(f.raw?.['A�O'] ?? f.raw?.['Anio'] ?? f.raw?.['A�o'] ?? f.raw?.['a�o']);
       const y2 = parseYear(f.raw?.['FECHA DEL HALLAZGO']);
       const y = y1 ?? y2;
       if (y != null) set.add(y);
     }
     
-    // Años de masacres
+    // A�os de masacres
     for (const m of masacres) {
-      const y = parseYear(m.raw?.['año'] ?? m.raw?.['fecha']);
+      const y = parseYear(m.raw?.['a�o'] ?? m.raw?.['fecha']);
       if (y != null) set.add(y);
     }
     
@@ -478,7 +493,7 @@ function Root() {
     }
   }, [allYears, yearRange]);
 
-  // When debouncedYearRange changes, sync filters.anio — uses debounced value so
+  // When debouncedYearRange changes, sync filters.anio � uses debounced value so
   // re-filtering fosas/masacres doesn't happen on every drag pixel.
   useEffect(() => {
     if (!allYears.length || !debouncedYearRange) return;
@@ -495,7 +510,7 @@ function Root() {
 
   
   const layers = useMemo(() => {
-    // Bounding box de México para limitar las tiles cargadas
+    // Bounding box de M�xico para limitar las tiles cargadas
     // [west, south, east, north]
     const MEXICO_EXTENT: [number, number, number, number] = [-120, 13, -85, 34];
 
@@ -555,7 +570,7 @@ function Root() {
       }
     }
 
-    // Agregar capas de delitos del corredor (usan polígonos corredor + datos CSV)
+    // Agregar capas de delitos del corredor (usan pol�gonos corredor + datos CSV)
     for (const delitoId of activeDelitoIds) {
       const layerData = shapeLayersData[delitoId];
       if (layerData && layerData.features.length > 0 && !layerData.loading) {
@@ -606,7 +621,7 @@ function Root() {
       }));
     }
 
-    // Agregar líneas de corredor (SVG/GeoJSON) encima de las capas de polígonos
+    // Agregar l�neas de corredor (SVG/GeoJSON) encima de las capas de pol�gonos
     if (activeLayers.includes('corredor')) {
       for (const lineConfig of CORREDOR_LINES) {
         const lineData = corredorLineData[lineConfig.id];
@@ -617,13 +632,28 @@ function Root() {
       }
     }
 
-    // Agregar polígonos de modalidad si hay filtros activos
+    // Agregar pol�gonos de modalidad si hay filtros activos
     const modalidadPolygonLayer = createModalidadPolygons(filteredFosas);
     if (modalidadPolygonLayer && filters.modalidad.length > 0) {
       baseLayers.push(modalidadPolygonLayer);
     }
 
-    // Agregar capas de puntos según visibilidad
+    // Pol�gono convex-hull cuando hay cualquier filtro activo (municipio, modalidad, hallazgo o texto)
+    const hasActiveFilters =
+      filters.municipio.length > 0 ||
+      filters.modalidad.length > 0 ||
+      filters.hallazgo.length > 0 ||
+      filters.texto.trim() !== '';
+    if (hasActiveFilters && (filters.showFosas || filters.showMasacres)) {
+      const allFilteredPoints: [number, number][] = [
+        ...(filters.showFosas ? filteredFosas : []).map(f => f.position as [number, number]),
+        ...(filters.showMasacres ? filteredMasacres : []).map(m => m.position as [number, number]),
+      ];
+      const searchPolygonLayer = createSearchPolygon(allFilteredPoints);
+      if (searchPolygonLayer) baseLayers.push(searchPolygonLayer);
+    }
+
+    // Agregar capas de puntos seg�n visibilidad
     if (filters.showFosas) {
       baseLayers.push(createFosasLayer(filteredFosas));
     }
@@ -652,7 +682,7 @@ function Root() {
         })
       );
     } else {
-      // Modo 2D: Curvas de nivel INEGI como teselas XYZ vía backend (después del mapa base)
+      // Modo 2D: Curvas de nivel INEGI como teselas XYZ v�a backend (despu�s del mapa base)
       baseLayers.push(
         // new TileLayer({
         //   id: 'inegi-curvas-xyz',
@@ -702,10 +732,10 @@ function Root() {
     }
 
     return baseLayers;
-  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange, corredorLineData, showAmozoc, amozocFeatures, activeDelitoIds]);
+  }, [mapStyle, filteredFosas, filteredMasacres, renderTileSubLayers, is3D, filters.modalidad, filters.hallazgo, filters.municipio, filters.texto, filters.showFosas, filters.showMasacres, activeLayers, shapeLayersData, debouncedYearRange, corredorLineData, showAmozoc, amozocFeatures, activeDelitoIds]);
     
 
-  // Pantalla de bienvenida (después de todos los hooks)
+  // Pantalla de bienvenida (despu�s de todos los hooks)
   if (showWelcome) {
     return (
       <WelcomeScreen
@@ -782,7 +812,7 @@ function Root() {
           }
           // El click en capas de shapefiles se maneja en el onClick del layer
           else if (info?.layer?.id?.startsWith('shape-layer-')) {
-            // No hacer nada aquí, el onClick del layer ya maneja esto
+            // No hacer nada aqu�, el onClick del layer ya maneja esto
           }
           else {
             // Click fuera de puntos: cerrar popup
@@ -885,11 +915,11 @@ function Root() {
           });
           const [px, py] = vp.project(selectedFeature.rec.position);
           return (
-            <FosaPopup x={px} y={py} feature={selectedFeature.rec} onClose={() => setSelectedFeature(null)} />
+            <FosaPopup x={px} y={py} feature={selectedFeature.rec} onClose={() => setSelectedFeature(null)} onOpenDetail={() => setShowFosaDetail(true)} />
           );
         })()}
         {selectedFeature?.type === 'masacre' && (
-          <MasacrePopup feature={selectedFeature.rec} onClose={() => setSelectedFeature(null)} />
+          <MasacrePopup feature={selectedFeature.rec} onClose={() => setSelectedFeature(null)} onOpenDetail={() => setShowMasacreDetail(true)} />
         )}
         {selectedFeature?.type === 'municipio' && (
           <MunicipioPopup 
@@ -933,7 +963,7 @@ function Root() {
           <div className="flex flex-col gap-2 pointer-events-auto">
             <button
               onClick={enterInfoMode}
-              title="Información sobre corredores"
+              title="Informaci�n sobre corredores"
               className="w-8 h-8 bg-white/90 hover:bg-white text-gray-700 text-sm font-bold rounded-full shadow-lg transition-colors border border-gray-200 flex items-center justify-center cursor-pointer"
             >
               ?
@@ -1057,7 +1087,7 @@ function Root() {
 
       {/* Leyenda de modalidades (solo visible cuando hay filtros de modalidad) */}
       {modalidadesInfo.length > 0 && (
-        <ModalidadLegend modalidades={modalidadesInfo} />
+        <ModalidadLegend modalidades={modalidadesInfo} left={isPanelCollapsed ? 16 : PANEL_W + 16} />
       )}
       </>)}
 
@@ -1087,6 +1117,22 @@ function Root() {
           uploadedCSVs={uploadedCSVs}
           onCSVUpload={handleCSVUpload}
           onCSVRemove={handleCSVRemove}
+        />
+      )}
+
+      {/* Fosa Detail Modal */}
+      {showFosaDetail && selectedFeature?.type === 'fosa' && (
+        <FosaDetailModal
+          feature={selectedFeature.rec}
+          onClose={() => setShowFosaDetail(false)}
+        />
+      )}
+
+      {/* Masacre Detail Modal */}
+      {showMasacreDetail && selectedFeature?.type === 'masacre' && (
+        <MasacreDetailModal
+          feature={selectedFeature.rec}
+          onClose={() => setShowMasacreDetail(false)}
         />
       )}
       

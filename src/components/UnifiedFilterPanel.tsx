@@ -1,8 +1,42 @@
-﻿import { useMemo, useState, useCallback } from 'react';
+﻿import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { FosaRecord } from '../hooks/useFosasData';
 import type { MasacreRecord } from '../hooks/useMasacresData';
 import type { ShapeConfig } from '../hooks/useShapefileLoader';
 import type { DelitoCategoriaInfo } from '../hooks/useDelitosData';
+import ChartsModal, { type ChartDataset } from './ChartsModal';
+
+// Normalization map for hallazgo parts (key: lowercase, value: canonical display name)
+// Merges case variants, aliases, and secondary actors from compound entries
+const HALLAZGO_NORMALIZE: Record<string, string> = {
+  'la voz de los desaparecidos': 'La Voz de los desaparecidos',
+  'colectivo la voz de los desaparecidos': 'La Voz de los desaparecidos',
+  'familias de personas desaparecidas': 'Familiares',
+  'poblador': 'Pobladores',
+};
+// Max length for a valid hallazgo part — anything longer is a note, not an actor name
+const HALLAZGO_MAX_LEN = 60;
+
+function normalizeHallazgoPart(part: string): string | null {
+  if (part.length > HALLAZGO_MAX_LEN) return null; // discard long artifact strings
+  return HALLAZGO_NORMALIZE[part.toLowerCase()] ?? part;
+}
+
+// Helper: wrap matching text in a <mark> element with yellow highlight
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  if (parts.length === 1) return text;
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase()
+          ? <mark key={i} style={{ background: '#fef08a', color: '#92400e', borderRadius: 2, padding: '0 1px' }}>{part}</mark>
+          : part
+      )}
+    </>
+  );
+}
 
 export type UnifiedFilters = {
   anio: string[];
@@ -58,9 +92,25 @@ export default function UnifiedFilterPanel({
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [chartTarget, setChartTarget] = useState<'fosas' | 'masacres' | null>(null);
+
+  // Prevent the map from zooming when the wheel is used over the panel.
+  // React's synthetic onWheel stops bubbling in React's tree but native deck.gl
+  // listeners attached to document/window are unaffected. A native listener added
+  // directly on the panel element fires before propagation reaches those listeners.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const stopWheel = (e: WheelEvent) => e.stopPropagation();
+    el.addEventListener('wheel', stopWheel);
+    return () => el.removeEventListener('wheel', stopWheel);
+  }, []);
   const [showCorredorInfo, setShowCorredorInfo] = useState(false);
   const [showFosasInfo, setShowFosasInfo] = useState(false);
   const [showMasacresInfo, setShowMasacresInfo] = useState(false);
+  const [showModalidadFilter, setShowModalidadFilter] = useState(false);
+  const [showHallazgoFilter, setShowHallazgoFilter] = useState(false);
   const [expandedCorredores, setExpandedCorredores] = useState<Set<string>>(new Set());
   const [expandedCategorias, setExpandedCategorias] = useState<Set<number>>(new Set());
 
@@ -112,6 +162,72 @@ export default function UnifiedFilterPanel({
     onChange({ ...value, municipio: arr.includes(m) ? arr.filter(x => x !== m) : [...arr, m] });
   };
 
+  const allModalidades = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of fosas) {
+      const mod = (f.raw?.['MODALIDAD DE FOSA'] ?? f.raw?.['MODALIDAD'] ?? '').toString().trim();
+      set.add(mod || 'Se desconoce');
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [fosas]);
+
+  const allHallazgos = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of fosas) {
+      const raw = (f.raw?.['QUIÉN HIZO EL HALLAZGO'] ?? f.raw?.['QUIEN HIZO EL HALLAZGO'] ?? '').toString().trim();
+      if (!raw) {
+        set.add('Se desconoce');
+      } else {
+        // Split compound entries like "Pobladores. La Voz de los Desaparecidos"
+        const parts = raw.split('.').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+        for (const part of parts) {
+          const normalized = normalizeHallazgoPart(part);
+          if (normalized) set.add(normalized);
+        }
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [fosas]);
+
+  const toggleModalidad = (m: string) => {
+    const arr = value.modalidad;
+    const next = arr.includes(m) ? arr.filter(x => x !== m) : [...arr, m];
+    // Hide masacres when any fosa-specific filter is active to reduce distraction
+    onChange({ ...value, modalidad: next, showMasacres: next.length > 0 ? false : value.showMasacres });
+  };
+
+  const toggleHallazgo = (h: string) => {
+    const arr = value.hallazgo;
+    const next = arr.includes(h) ? arr.filter(x => x !== h) : [...arr, h];
+    // Hide masacres when any fosa-specific filter is active to reduce distraction
+    onChange({ ...value, hallazgo: next, showMasacres: next.length > 0 ? false : value.showMasacres });
+  };
+
+  // ── Chart data (all fosas/masacres, unfiltered) ─────────────────────────
+  const fosasChartData = useMemo((): ChartDataset => {
+    const counts: Record<string, number> = {};
+    for (const f of fosas) {
+      const y = String(f.raw?.['AÑO'] ?? f.raw?.['Anio'] ?? f.raw?.['Año'] ?? '').trim();
+      if (y && /^\d{4}$/.test(y)) counts[y] = (counts[y] ?? 0) + 1;
+    }
+    const data = Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([year, count]) => ({ year, count }));
+    const total = data.reduce((s, d) => s + d.count, 0);
+    const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+    return { label: 'Fosas Clandestinas', accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count };
+  }, [fosas]);
+
+  const masacresChartData = useMemo((): ChartDataset => {
+    const counts: Record<string, number> = {};
+    for (const m of masacres) {
+      const y = String(m.raw?.['año'] ?? m.raw?.['Año'] ?? m.raw?.['AÑO'] ?? '').trim();
+      if (y && /^\d{4}$/.test(y)) counts[y] = (counts[y] ?? 0) + 1;
+    }
+    const data = Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([year, count]) => ({ year, count }));
+    const total = data.reduce((s, d) => s + d.count, 0);
+    const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+    return { label: 'Masacres', accentColor: '#7c3aed', bgColor: '#fdf4ff', borderColor: '#e9d5ff', data, total, peakYear: peak.year, peakCount: peak.count };
+  }, [masacres]);
+
   const layerDotStyle = (layer: ShapeConfig): React.CSSProperties => ({
     backgroundColor: layer.color
       ? `rgba(${layer.color[0]},${layer.color[1]},${layer.color[2]},0.5)`
@@ -147,6 +263,7 @@ export default function UnifiedFilterPanel({
 
       {/* Main panel */}
       <div
+        ref={panelRef}
         style={{
           position: 'fixed', top: 0, left: collapsed ? -PANEL_W : 0,
           width: PANEL_W, height: '100vh',
@@ -154,7 +271,6 @@ export default function UnifiedFilterPanel({
           zIndex: 1100, transition: 'left 0.3s ease',
           boxShadow: '2px 0 16px rgba(0,0,0,0.12)', pointerEvents: 'auto',
         }}
-        onWheel={e => e.stopPropagation()}
       >
         {/* Header */}
         <div style={{ padding: '12px 18px 10px', flexShrink: 0 }}>
@@ -180,8 +296,8 @@ export default function UnifiedFilterPanel({
 
         {/* Scrollable body */}
         <div
+          className="panel-scroll-body"
           style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 20 }}
-          onWheel={e => e.stopPropagation()}
         >
           {/* Title + clear */}
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -215,6 +331,22 @@ export default function UnifiedFilterPanel({
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', display: 'inline-block', flexShrink: 0 }} />
                     Fosas Clandestinas
                   </span>
+                  {/* Gráfica button */}
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setChartTarget('fosas'); }}
+                    title="Ver gráfica por año"
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', border: '1px solid #9ca3af',
+                      background: 'transparent', color: '#9ca3af',
+                      fontSize: 10, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      padding: 0, flexShrink: 0,
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: 10, height: 10 }}>
+                      <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z" />
+                    </svg>
+                  </button>
                   <button
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFosasInfo(!showFosasInfo); }}
                     title="¿Qué es una fosa clandestina?"
@@ -243,6 +375,22 @@ export default function UnifiedFilterPanel({
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#9b59b6', border: '2px solid #4b0082', display: 'inline-block', flexShrink: 0 }} />
                     Masacres
                   </span>
+                  {/* Gráfica button */}
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setChartTarget('masacres'); }}
+                    title="Ver gráfica por año"
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', border: '1px solid #9ca3af',
+                      background: 'transparent', color: '#9ca3af',
+                      fontSize: 10, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      padding: 0, flexShrink: 0,
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: 10, height: 10 }}>
+                      <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z" />
+                    </svg>
+                  </button>
                   <button
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowMasacresInfo(!showMasacresInfo); }}
                     title="¿Qué es una masacre?"
@@ -264,6 +412,138 @@ export default function UnifiedFilterPanel({
               </div>
             </div>
           </div>
+
+          {/* BUSQUEDA POR TEXTO */}
+          {(value.showFosas || value.showMasacres) && (
+          <div>
+            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              Busqueda por texto
+            </p>
+            <input
+              type="text"
+              placeholder="Buscar en descripción, zona..."
+              value={value.texto}
+              onChange={e => onChange({ ...value, texto: e.target.value })}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '8px 10px',
+                fontSize: 12, border: '1px solid #d1d5db', borderRadius: 6,
+                outline: 'none', color: '#111', background: '#f9fafb',
+              }}
+            />
+            {value.texto && (
+              <button onClick={() => onChange({ ...value, texto: '' })}
+                style={{ marginTop: 4, fontSize: 10, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                Limpiar texto ×
+              </button>
+            )}
+          </div>
+          )}
+
+          {/* FILTRO POR MODALIDAD DE FOSA */}
+          {value.showFosas && (
+          <div>
+            <button
+              onClick={() => setShowModalidadFilter(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                marginBottom: showModalidadFilter ? 8 : 0,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Modalidad de fosa {value.modalidad.length > 0 && <span style={{ color: '#ef4444' }}>({value.modalidad.length})</span>}
+                </p>
+                <span style={{ fontSize: 9, color: '#ef4444', fontStyle: 'italic', opacity: 0.7 }}>Solo fosas clandestinas</span>
+              </div>
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="#9ca3af"
+                style={{ transition: 'transform 0.2s', transform: showModalidadFilter ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06z" clipRule="evenodd"/>
+              </svg>
+            </button>
+            {showModalidadFilter && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 200, overflowY: 'auto' }}>
+                {allModalidades.map(mod => (
+                  <label key={mod} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    fontSize: 12, color: '#374151', padding: '4px 6px', borderRadius: 5,
+                    background: value.modalidad.includes(mod) ? '#fef2f2' : 'transparent',
+                    border: `1px solid ${value.modalidad.includes(mod) ? '#fecaca' : 'transparent'}`,
+                  }}>
+                    <input type="checkbox"
+                      checked={value.modalidad.includes(mod)}
+                      onChange={() => toggleModalidad(mod)}
+                      style={{ width: 13, height: 13, accentColor: '#ef4444', cursor: 'pointer', flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{mod}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {value.modalidad.length > 0 && (
+              <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                {value.modalidad.map(m => (
+                  <button key={m} onClick={() => toggleModalidad(m)}
+                    style={{ fontSize: 10, padding: '2px 7px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, cursor: 'pointer', color: '#dc2626' }}>
+                    {m} ×
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          )}
+
+          {/* FILTRO POR QUIÉN HIZO EL HALLAZGO */}
+          {value.showFosas && (
+          <div>
+            <button
+              onClick={() => setShowHallazgoFilter(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                marginBottom: showHallazgoFilter ? 8 : 0,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Quién hizo el hallazgo {value.hallazgo.length > 0 && <span style={{ color: '#ef4444' }}>({value.hallazgo.length})</span>}
+                </p>
+                <span style={{ fontSize: 9, color: '#ef4444', fontStyle: 'italic', opacity: 0.7 }}>Solo fosas clandestinas</span>
+              </div>
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="#9ca3af"
+                style={{ transition: 'transform 0.2s', transform: showHallazgoFilter ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06z" clipRule="evenodd"/>
+              </svg>
+            </button>
+            {showHallazgoFilter && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 200, overflowY: 'auto' }}>
+                {allHallazgos.map(h => (
+                  <label key={h} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    fontSize: 12, color: '#374151', padding: '4px 6px', borderRadius: 5,
+                    background: value.hallazgo.includes(h) ? '#fdf4ff' : 'transparent',
+                    border: `1px solid ${value.hallazgo.includes(h) ? '#e9d5ff' : 'transparent'}`,
+                  }}>
+                    <input type="checkbox"
+                      checked={value.hallazgo.includes(h)}
+                      onChange={() => toggleHallazgo(h)}
+                      style={{ width: 13, height: 13, accentColor: '#7c3aed', cursor: 'pointer', flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{h}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {value.hallazgo.length > 0 && (
+              <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                {value.hallazgo.map(h => (
+                  <button key={h} onClick={() => toggleHallazgo(h)}
+                    style={{ fontSize: 10, padding: '2px 7px', background: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: 12, cursor: 'pointer', color: '#7c3aed' }}>
+                    {h} ×
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          )}
 
           {/* BUSQUEDA POR MUNICIPIO */}
           <div>
@@ -537,29 +817,38 @@ export default function UnifiedFilterPanel({
                 {value.showFosas ? 'Fosas' : 'Masacres'}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
-                {value.showFosas && filteredFosas.map((f, i) => (
-                  <button key={i} onClick={() => onSelectFosa(f)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#111' }}>
-                    <strong style={{ display: 'block', marginBottom: 2 }}>
-                      {f.raw?.['MUNICIPIO'] ?? f.raw?.['MUNUCUPIO'] ?? f.raw?.['Municipio'] ?? 'Sin municipio'}
-                    </strong>
-                    <span style={{ fontSize: 11, color: '#6b7280' }}>
-                      {f.raw?.['AÑO'] ?? f.raw?.['Anio'] ?? f.raw?.['Año'] ?? 'N/A'}
-                      {f.raw?.['ZONA'] ? `  ${f.raw['ZONA']}` : ''}
-                    </span>
-                  </button>
-                ))}
-                {value.showMasacres && filteredMasacres.map((m, i) => (
-                  <button key={`m-${i}`} onClick={() => onSelectMasacre(m)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'white', border: '1px solid #e9d5ff', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#111' }}>
-                    <strong style={{ display: 'block', marginBottom: 2 }}>
-                      {m.raw?.['Municipio'] ?? m.raw?.['MUNICIPIO'] ?? 'Sin municipio'}
-                    </strong>
-                    <span style={{ fontSize: 11, color: '#6b7280' }}>
-                      {m.raw?.['año'] ?? m.raw?.['fecha'] ?? 'Sin fecha'}
-                    </span>
-                  </button>
-                ))}
+                {value.showFosas && filteredFosas.map((f, i) => {
+                  const muni = String(f.raw?.['MUNICIPIO'] ?? f.raw?.['MUNUCUPIO'] ?? f.raw?.['Municipio'] ?? 'Sin municipio');
+                  const anioVal = String(f.raw?.['AÑO'] ?? f.raw?.['Anio'] ?? f.raw?.['Año'] ?? 'N/A');
+                  const zonaVal = f.raw?.['ZONA'] ? String(f.raw['ZONA']) : '';
+                  return (
+                    <button key={i} onClick={() => onSelectFosa(f)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#111' }}>
+                      <strong style={{ display: 'block', marginBottom: 2 }}>
+                        {highlightText(muni, value.texto)}
+                      </strong>
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>
+                        {highlightText(anioVal, value.texto)}
+                        {zonaVal ? <>{'  '}{highlightText(zonaVal, value.texto)}</> : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+                {value.showMasacres && filteredMasacres.map((m, i) => {
+                  const muni = String(m.raw?.['Municipio'] ?? m.raw?.['MUNICIPIO'] ?? 'Sin municipio');
+                  const fechaVal = String(m.raw?.['año'] ?? m.raw?.['fecha'] ?? 'Sin fecha');
+                  return (
+                    <button key={`m-${i}`} onClick={() => onSelectMasacre(m)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'white', border: '1px solid #e9d5ff', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#111' }}>
+                      <strong style={{ display: 'block', marginBottom: 2 }}>
+                        {highlightText(muni, value.texto)}
+                      </strong>
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>
+                        {highlightText(fechaVal, value.texto)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -567,6 +856,17 @@ export default function UnifiedFilterPanel({
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Charts Modal */}
+      {chartTarget && (
+        <ChartsModal
+          datasets={chartTarget === 'fosas'
+            ? [fosasChartData]
+            : [masacresChartData]
+          }
+          onClose={() => setChartTarget(null)}
+        />
+      )}
     </>
   );
 }

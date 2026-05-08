@@ -49,7 +49,7 @@ export function useDelitosData(enabled: boolean = true) {
     const loadCSV = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/CSVs/CSVDelitos_CORR_CEN_12abr.csv');
+        const response = await fetch('/CSVs/CSVDelitos_CORR_CEN_NUEVO.csv');
         if (!response.ok) throw new Error(`Error cargando CSV delitos: ${response.status}`);
 
         const buffer = await response.arrayBuffer();
@@ -98,11 +98,8 @@ export function useDelitosData(enabled: boolean = true) {
             TIPO_DE_DELITO: row.TIPO_DE_DELITO || '',
             ID_Categoria: parseInt(row.ID_Categoria) || 0,
             CATEGORIA: row.CATEGORIA || '',
-            // INCIDENCIA and POBLACION are whole numbers — the CSV may use '.' as a
-            // Mexican thousands separator (e.g. "1.781" means 1,781), so strip dots
-            // before parsing to avoid reading them as decimals.
-            INCIDENCIA: parseInt((row.INCIDENCIA || '0').replace(/\./g, '').replace(/o/gi, '0'), 10) || 0,
-            POBLACION: parseInt((row.POBLACION || '0').replace(/\./g, ''), 10) || 0,
+            INCIDENCIA: parseInt(row.INCIDENCIA || '0', 10) || 0,
+            POBLACION: parseInt(row.POBLACION || '0', 10) || 0,
             TASA: parseFloat(row.TASA) || 0,
           });
         }

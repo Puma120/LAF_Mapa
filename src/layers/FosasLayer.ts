@@ -145,13 +145,42 @@ export function createModalidadPolygons(fosas: FosaRecord[]): Layer | null {
     data: polygons,
     getPolygon: (d) => d.polygon,
     getFillColor: (d) => d.color,
-    getLineColor: (d) => [d.color[0], d.color[1], d.color[2], 220],
-    getLineWidth: 3,
-    lineWidthMinPixels: 2,
+    getLineColor: (d) => [
+      Math.round(d.color[0] * 0.5),
+      Math.round(d.color[1] * 0.5),
+      Math.round(d.color[2] * 0.5),
+      250,
+    ],
+    getLineWidth: 8,
+    lineWidthMinPixels: 4,
     pickable: false,
     stroked: true,
     filled: true,
     extruded: false,
+  });
+}
+
+// Convex hull de TODOS los puntos filtrados (fosas + masacres combinados)
+// Se usa para dibujar el polígono que conecta los resultados de búsqueda
+export function createSearchPolygon(points: [number, number][]): Layer | null {
+  if (points.length < 3) return null;
+
+  const hull = convexHull(points);
+  if (hull.length < 3) return null;
+
+  return new PolygonLayer({
+    id: 'search-result-polygon',
+    data: [{ polygon: hull }],
+    getPolygon: (d: any) => d.polygon,
+    getFillColor: [255, 200, 0, 55],
+    getLineColor: [210, 90, 0, 245],
+    getLineWidth: 5,
+    lineWidthMinPixels: 3,
+    pickable: false,
+    stroked: true,
+    filled: true,
+    extruded: false,
+    parameters: { depthTest: false } as any,
   });
 }
 
