@@ -355,7 +355,7 @@ export default function ChartsModal({ datasets, defaultTab = 0, onClose }: Props
 
         {/* Footer */}
         <div style={{ flexShrink: 0, padding: '8px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa', borderRadius: '0 0 16px 16px' }}>
-          <span style={{ fontSize: 11, color: '#9ca3af', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ fontSize: 11, color: '#ff2a00', display: 'flex', alignItems: 'center', gap: 5 }}>
             <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" style={{ opacity: 0.7 }}><path d="M10 3a1 1 0 0 1 .707.293l6 6a1 1 0 0 1-1.414 1.414L10 5.414 4.707 10.707A1 1 0 0 1 3.293 9.293l6-6A1 1 0 0 1 10 3z"/><path d="M10 10a1 1 0 0 1 .707.293l6 6a1 1 0 0 1-1.414 1.414L10 12.414l-5.293 5.293a1 1 0 0 1-1.414-1.414l6-6A1 1 0 0 1 10 10z"/></svg>
             Arrastra el encabezado · Esquina ↘ para redimensionar
           </span>
