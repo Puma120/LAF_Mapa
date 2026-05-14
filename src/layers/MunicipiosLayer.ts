@@ -50,7 +50,7 @@ export function createMunicipiosLayer(
     visible = true,
     filled = true,
     stroked = true,
-    lineWidthMinPixels = 1,
+    lineWidthMinPixels: _lineWidthMinPixels = 1,
     pickable = true,
     highlightColor = [255, 255, 0, 128],
     onClick,

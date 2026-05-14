@@ -77,7 +77,7 @@ function getColorByIndex(layerId: string, index: number): [number, number, numbe
   return colors[index % colors.length];
 }
 
-function getBorderColor(fillColor: [number, number, number, number]): [number, number, number, number] {
+function getBorderColor(_fillColor: [number, number, number, number]): [number, number, number, number] {
   // Dark border for maximum contrast regardless of fill color
   return [20, 20, 20, 200];
 }

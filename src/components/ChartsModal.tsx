@@ -229,7 +229,7 @@ export default function ChartsModal({ datasets, defaultTab = 0, onClose }: Props
     const onMove = (e: MouseEvent) => {
       if (dragRef.current) {
         const { mx, my, px, py } = dragRef.current;
-        const { w, h } = sizeRef.current;
+        const { w, h: _h } = sizeRef.current;
         setPos({
           x: Math.max(0, Math.min(window.innerWidth  - w,  px + e.clientX - mx)),
           y: Math.max(0, Math.min(window.innerHeight - 60, py + e.clientY - my)),
