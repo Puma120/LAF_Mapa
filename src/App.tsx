@@ -932,11 +932,23 @@ function Root() {
           layers={LAYER_CONFIGS}
           activeLayers={activeLayers}
           onToggleLayer={(layerId) => {
-            setActiveLayers(prev =>
-              prev.includes(layerId)
-                ? prev.filter(id => id !== layerId)
-                : [...prev, layerId]
-            );
+            setActiveLayers(prev => {
+              if (prev.includes(layerId)) {
+                // Al desactivar, también desactivar todas las subcapas
+                const childIds = LAYER_CONFIGS
+                  .filter(l => l.parentId === layerId)
+                  .map(l => l.id);
+                // Si se desactiva corredor centro, quitar también todos los delitos
+                const removeDelitos = layerId === 'homicidio_doloso';
+                return prev.filter(id =>
+                  id !== layerId &&
+                  !childIds.includes(id) &&
+                  !(removeDelitos && id.startsWith('delito_'))
+                );
+              } else {
+                return [...prev, layerId];
+              }
+            });
           }}
           loadingLayers={loadingLayers}
           delitoCategorias={delitosData.categorias}
