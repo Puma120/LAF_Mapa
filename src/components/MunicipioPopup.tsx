@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import ChartsModal, { type ChartDataset } from './ChartsModal';
+import { useEffect } from 'react';
+import type { ChartDataset } from './ChartsModal';
 
 export interface MunicipioProperties {
   CVEGEO?: string;
@@ -15,7 +15,8 @@ export interface MunicipioProperties {
 type Props = {
   properties: MunicipioProperties;
   onClose: () => void;
-  yearRange?: [number, number]; // Rango de años de la línea del tiempo
+  yearRange?: [number, number];
+  onOpenChart?: (properties: MunicipioProperties, chartType: 'corredor' | 'desap' | 'delito') => void;
 };
 
 // Campos internos que no queremos mostrar
@@ -146,8 +147,43 @@ function getDelitoPorAnio(
   return result;
 }
 
-export default function MunicipioPopup({ properties, onClose, yearRange }: Props) {
-  const [chartData, setChartData] = useState<ChartDataset | null>(null);
+// ─── Standalone exported builder — lets App.tsx recompute reactively ──────────
+export function buildMunicipioDataset(
+  properties: MunicipioProperties,
+  yearRange: [number, number],
+  chartType: 'corredor' | 'desap' | 'delito'
+): ChartDataset | null {
+  const titleField = properties.NOMGEO || properties.NOMBRE || properties.NOM_MUN || null;
+  const delitoType = properties._delitoType as string | undefined;
+
+  if (chartType === 'corredor') {
+    const rows = getDesaparicionesPorAnio(properties, yearRange);
+    if (!rows.length) return null;
+    const data = rows.map(d => ({ year: String(d.year), count: d.count }));
+    const total = data.reduce((s, d) => s + d.count, 0);
+    const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+    return { label: 'Desapariciones', municipio: titleField ?? undefined, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count };
+  }
+  if (chartType === 'desap') {
+    const rows = getDesapCSVPorAnio(properties, yearRange);
+    if (!rows.length) return null;
+    const data = rows.map(d => ({ year: String(d.year), count: d.total }));
+    const total = data.reduce((s, d) => s + d.count, 0);
+    const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+    return { label: 'Desapariciones', municipio: titleField ?? undefined, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count };
+  }
+  if (chartType === 'delito') {
+    const rows = getDelitoPorAnio(properties, yearRange);
+    if (!rows.length) return null;
+    const data = rows.map(d => ({ year: String(d.year), count: d.incidencia }));
+    const total = data.reduce((s, d) => s + d.count, 0);
+    const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
+    return { label: delitoType || 'Delito', municipio: titleField ?? undefined, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count };
+  }
+  return null;
+}
+
+export default function MunicipioPopup({ properties, onClose, yearRange, onOpenChart }: Props) {
 
   // Cerrar con tecla Escape para mayor accesibilidad
   useEffect(() => {
@@ -190,6 +226,8 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
     ? getDelitoPorAnio(properties, yearRange)
     : [];
   const totalIncidencia = delitoPorAnio.reduce((sum, d) => sum + d.incidencia, 0);
+
+
   
   // Para municipios genéricos — filtrar campos sin información relevante
   const visibleFields = isGeneric 
@@ -295,12 +333,7 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-[#718096] uppercase tracking-wide m-0">Desglose por Año</p>
                   <button
-                    onClick={() => {
-                      const data = desapPorAnio.map(d => ({ year: String(d.year), count: d.total }));
-                      const total = desapPorAnio.reduce((s, d) => s + d.total, 0);
-                      const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
-                      setChartData({ label: `Desapariciones — ${titleField || 'Municipio'}`, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count });
-                    }}
+                    onClick={() => onOpenChart?.(properties, 'desap')}
                     title="Ver gráfica"
                     className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 bg-red-50 hover:bg-red-100 transition-colors"
                   >
@@ -366,12 +399,7 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-[#718096] uppercase tracking-wide m-0">Desglose por Año</p>
                   <button
-                    onClick={() => {
-                      const data = delitoPorAnio.map(d => ({ year: String(d.year), count: d.incidencia }));
-                      const total = delitoPorAnio.reduce((s, d) => s + d.incidencia, 0);
-                      const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
-                      setChartData({ label: `${delitoType || 'Delito'} — ${titleField || 'Municipio'}`, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count });
-                    }}
+                    onClick={() => onOpenChart?.(properties, 'delito')}
                     title="Ver gráfica"
                     className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 bg-red-50 hover:bg-red-100 transition-colors"
                   >
@@ -433,12 +461,7 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-[#718096] uppercase tracking-wide m-0">Desglose por Año</p>
                   <button
-                    onClick={() => {
-                      const data = corredorPorAnio.map(d => ({ year: String(d.year), count: d.count }));
-                      const total = corredorPorAnio.reduce((s, d) => s + d.count, 0);
-                      const peak = data.reduce((p, c) => c.count > p.count ? c : p, { year: '—', count: 0 });
-                      setChartData({ label: `Desapariciones — ${titleField || 'Corredor'}`, accentColor: '#dc2626', bgColor: '#fff5f5', borderColor: '#fecaca', data, total, peakYear: peak.year, peakCount: peak.count });
-                    }}
+                    onClick={() => onOpenChart?.(properties, 'corredor')}
                     title="Ver gráfica"
                     className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 bg-red-50 hover:bg-red-100 transition-colors"
                   >
@@ -503,10 +526,6 @@ export default function MunicipioPopup({ properties, onClose, yearRange }: Props
         )}
       </div>
 
-      {/* Chart modal */}
-      {chartData && (
-        <ChartsModal datasets={[chartData]} onClose={() => setChartData(null)} />
-      )}
     </div>
   );
 }

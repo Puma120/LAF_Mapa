@@ -27,8 +27,8 @@ function getColorByIndex(index: number): [number, number, number, number] {
 }
 
 // Función para obtener un color más intenso para el borde
-function getBorderColor(fillColor: [number, number, number, number]): [number, number, number, number] {
-  return [fillColor[0], fillColor[1], fillColor[2], 200];
+function getBorderColor(_fillColor: [number, number, number, number]): [number, number, number, number] {
+  return [20, 20, 20, 200];
 }
 
 export interface MunicipioLayerOptions {
@@ -90,7 +90,8 @@ export function createMunicipiosLayer(
       return getBorderColor(fillColor);
     },
     getLineWidth: 2,
-    lineWidthMinPixels,
+    lineWidthMinPixels: 1.5,
+    lineWidthMaxPixels: 3,
     // Configuración de extrusión (opcional para 3D)
     extruded: false,
     onClick,

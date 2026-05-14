@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export type YearCount = { year: string; count: number };
 
 export type ChartDataset = {
   label: string;
+  municipio?: string;
   accentColor: string;
   bgColor: string;
   borderColor: string;
@@ -30,7 +32,7 @@ function BarChart({ dataset }: { dataset: ChartDataset }) {
     </div>
   );
 
-  const W = 520, H = 200;
+  const W = 520, H = 320;
   const padL = 36, padR = 16, padT = 28, padB = 48;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -56,8 +58,8 @@ function BarChart({ dataset }: { dataset: ChartDataset }) {
   });
 
   return (
-    <div style={{ position: 'relative' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', flex: 1, minHeight: 0, display: 'block' }}>
         {/* Y-axis label */}
         <text x={8} y={padT + plotH / 2} textAnchor="middle" fontSize="9" fill="#9ca3af"
           transform={`rotate(-90, 8, ${padT + plotH / 2})`}>registros</text>
@@ -171,9 +173,12 @@ function StatsRow({ dataset }: { dataset: ChartDataset }) {
   const { total, peakYear, peakCount, accentColor, bgColor, borderColor, data } = dataset;
   const firstYear = data[0]?.year ?? '—';
   const lastYear = data[data.length - 1]?.year ?? '—';
-  const lastCount = data[data.length - 1]?.count ?? 0;
-  const firstCount = data[0]?.count ?? 0;
-  const trend = firstCount > 0 ? Math.round(((lastCount - firstCount) / firstCount) * 100) : null;
+  // Population variance: σ² = Σ(xᵢ − μ)² / n
+  const counts = data.map(d => d.count);
+  const mean = counts.length ? counts.reduce((s, c) => s + c, 0) / counts.length : 0;
+  const variance = counts.length
+    ? Math.round(counts.reduce((s, c) => s + (c - mean) ** 2, 0) / counts.length)
+    : null;
 
   const card = (label: string, value: string | number, sub?: string) => (
     <div style={{
@@ -191,15 +196,68 @@ function StatsRow({ dataset }: { dataset: ChartDataset }) {
       {card('Total', total)}
       {card('Año pico', peakYear, `${peakCount} registros`)}
       {card('Período', `${firstYear}–${lastYear}`)}
-      {trend !== null && card('Variación', `${trend > 0 ? '+' : ''}${trend}%`, `${firstYear} → ${lastYear}`)}
+      {variance !== null && card('Varianza (σ²)', variance.toLocaleString(), `μ = ${Math.round(mean)}`)}
     </div>
   );
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
+const BAR_SVG_PATH = "M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z";
+
 export default function ChartsModal({ datasets, defaultTab = 0, onClose }: Props) {
   const [tab, setTab] = useState(Math.min(defaultTab, datasets.length - 1));
 
+  // ── Draggable + resizable ─────────────────────────────────────────────────
+  const initW = Math.min(Math.round(window.innerWidth * 0.84), 1000);
+  const initH = Math.round(window.innerHeight * 0.84);
+  const [size, setSize] = useState({ w: initW, h: initH });
+  const [pos,  setPos]  = useState({
+    x: Math.round((window.innerWidth  - initW) / 2),
+    y: Math.round((window.innerHeight - initH) / 2),
+  });
+
+  // Refs so mousemove handlers never go stale
+  const sizeRef = useRef(size);
+  const posRef  = useRef(pos);
+  useEffect(() => { sizeRef.current = size; }, [size]);
+  useEffect(() => { posRef.current  = pos;  }, [pos]);
+
+  const dragRef   = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
+  const resizeRef = useRef<{ mx: number; my: number; w: number; h: number }  | null>(null);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (dragRef.current) {
+        const { mx, my, px, py } = dragRef.current;
+        const { w, h } = sizeRef.current;
+        setPos({
+          x: Math.max(0, Math.min(window.innerWidth  - w,  px + e.clientX - mx)),
+          y: Math.max(0, Math.min(window.innerHeight - 60, py + e.clientY - my)),
+        });
+      }
+      if (resizeRef.current) {
+        const { mx, my, w: sw, h: sh } = resizeRef.current;
+        const { x, y } = posRef.current;
+        setSize({
+          w: Math.max(380, Math.min(window.innerWidth  - x - 4, sw + e.clientX - mx)),
+          h: Math.max(280, Math.min(window.innerHeight - y - 4, sh + e.clientY - my)),
+        });
+      }
+    };
+    const onUp = () => {
+      dragRef.current   = null;
+      resizeRef.current = null;
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+    };
+  }, []);
+
+  // Escape key
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, { capture: true });
@@ -209,35 +267,51 @@ export default function ChartsModal({ datasets, defaultTab = 0, onClose }: Props
   const current = datasets[tab];
   if (!current) return null;
 
-  return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-8"
-      style={{ background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}
-    >
+  // Dedicated portal container — avoids "Target container is not a DOM element" in Strict Mode
+  const portalTarget = (() => {
+    const existing = document.getElementById('charts-modal-portal');
+    if (existing) return existing;
+    const el = document.createElement('div');
+    el.id = 'charts-modal-portal';
+    document.body.appendChild(el);
+    return el;
+  })();
+
+  return createPortal(
+    <>
+      {/* Draggable / resizable modal — no overlay so map stays interactive */}
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden"
-        style={{ maxHeight: '90vh' }}
+        className="bg-white rounded-2xl shadow-2xl flex flex-col"
+        style={{ position: 'fixed', zIndex: 9999, left: pos.x, top: pos.y, width: size.w, height: size.h,
+          boxShadow: '0 8px 40px rgba(0,0,0,0.28), 0 0 0 1px rgba(0,0,0,0.06)' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
+        {/* Header — drag handle */}
+        <div
+          style={{ padding: '14px 20px 12px', borderBottom: '1px solid #f3f4f6', flexShrink: 0, cursor: 'grab', userSelect: 'none' }}
+          onMouseDown={e => {
+            if ((e.target as HTMLElement).closest('button')) return;
+            e.preventDefault();
+            document.body.style.userSelect = 'none';
+            dragRef.current = { mx: e.clientX, my: e.clientY, px: posRef.current.x, py: posRef.current.y };
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={current.accentColor} style={{ width: 22, height: 22, flexShrink: 0 }}>
-                <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z" />
+                <path d={BAR_SVG_PATH} />
               </svg>
               <div>
-                <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Estadísticas
-                </p>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>
-                  Crecimiento por año
-                </h2>
+                <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Estadísticas</p>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>{current.label}</h2>
+                {current.municipio && (
+                  <p style={{ margin: '2px 0 0', fontSize: 13, color: '#6b7280', fontWeight: 500 }}>{current.municipio}</p>
+                )}
               </div>
             </div>
             <button
               type="button" onClick={onClose} aria-label="Cerrar"
+              onMouseDown={e => e.stopPropagation()}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center' }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: 20, height: 20 }}>
@@ -246,11 +320,12 @@ export default function ChartsModal({ datasets, defaultTab = 0, onClose }: Props
             </button>
           </div>
 
-          {/* Tabs */}
           {datasets.length > 1 && (
             <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
               {datasets.map((ds, i) => (
-                <button key={i} onClick={() => setTab(i)}
+                <button key={i}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={() => setTab(i)}
                   style={{
                     padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
                     cursor: 'pointer', border: `1px solid ${i === tab ? ds.accentColor : '#e5e7eb'}`,
@@ -265,33 +340,45 @@ export default function ChartsModal({ datasets, defaultTab = 0, onClose }: Props
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Stats */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 12px', display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
           <StatsRow dataset={current} />
-
-          {/* Chart */}
-          <div style={{ background: '#fafafa', border: '1px solid #f3f4f6', borderRadius: 12, padding: '16px 8px 8px' }}>
-            <p style={{ margin: '0 0 8px 36px', fontSize: 11, fontWeight: 600, color: '#374151' }}>
-              {current.label} registradas por año
-            </p>
-            <BarChart dataset={current} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#fafafa', border: '1px solid #f3f4f6', borderRadius: 12, padding: '12px 8px 8px', minHeight: 0 }}>
+            <p style={{ margin: '0 0 6px 36px', fontSize: 11, fontWeight: 600, color: '#374151', flexShrink: 0 }}>Registros por año</p>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'stretch' }}>
+              <BarChart dataset={current} />
+            </div>
           </div>
-
-          <p style={{ margin: 0, fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
+          <p style={{ margin: 0, fontSize: 10, color: '#9ca3af', textAlign: 'center', flexShrink: 0 }}>
             Pasa el cursor sobre las barras para ver el valor exacto. La línea discontinua muestra el acumulado.
           </p>
         </div>
 
         {/* Footer */}
-        <div style={{ flexShrink: 0, padding: '10px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', background: '#fafafa' }}>
+        <div style={{ flexShrink: 0, padding: '8px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa', borderRadius: '0 0 16px 16px' }}>
+          <span style={{ fontSize: 10, color: '#d1d5db' }}>
+            Arrastra el encabezado · Esquina ↘ para redimensionar
+          </span>
           <button type="button" onClick={onClose}
-            style={{
-              padding: '7px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              color: 'white', background: current.accentColor, border: 'none', cursor: 'pointer',
-            }}
+            style={{ padding: '7px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'white', background: current.accentColor, border: 'none', cursor: 'pointer' }}
           >Cerrar</button>
         </div>
+
+        {/* Resize handle — bottom-right corner */}
+        <div
+          style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, cursor: 'se-resize', zIndex: 1 }}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.body.style.userSelect = 'none';
+            resizeRef.current = { mx: e.clientX, my: e.clientY, w: sizeRef.current.w, h: sizeRef.current.h };
+          }}
+        >
+          <svg viewBox="0 0 12 12" style={{ position: 'absolute', bottom: 6, right: 6, opacity: 0.35 }} width="12" height="12">
+            <path d="M11 1 1 11M11 5 5 11M11 9 9 11" stroke="#374151" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
       </div>
-    </div>
+    </>,
+    portalTarget
   );
 }

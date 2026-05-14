@@ -8,10 +8,13 @@ import ChartsModal, { type ChartDataset } from './ChartsModal';
 // Normalization map for hallazgo parts (key: lowercase, value: canonical display name)
 // Merges case variants, aliases, and secondary actors from compound entries
 const HALLAZGO_NORMALIZE: Record<string, string> = {
-  'la voz de los desaparecidos': 'La Voz de los desaparecidos',
-  'colectivo la voz de los desaparecidos': 'La Voz de los desaparecidos',
+  'la voz de los desaparecidos': 'Grupo Ciudadano de Búsqueda',
+  'colectivo la voz de los desaparecidos': 'Grupo Ciudadano de Búsqueda',
+  'grupo ciudadano de búsqueda': 'Grupo Ciudadano de Búsqueda',
+  'grupo ciudadano de busqueda': 'Grupo Ciudadano de Búsqueda',
   'familias de personas desaparecidas': 'Familiares',
   'poblador': 'Pobladores',
+  'poblador menor de edad': 'Pobladores',
 };
 // Max length for a valid hallazgo part — anything longer is a note, not an actor name
 const HALLAZGO_MAX_LEN = 60;
@@ -207,7 +210,8 @@ export default function UnifiedFilterPanel({
   const fosasChartData = useMemo((): ChartDataset => {
     const counts: Record<string, number> = {};
     for (const f of fosas) {
-      const y = String(f.raw?.['AÑO'] ?? f.raw?.['Anio'] ?? f.raw?.['Año'] ?? '').trim();
+      const raw = String(f.raw?.['AÑO'] ?? f.raw?.['Anio'] ?? f.raw?.['Año'] ?? f.raw?.['año'] ?? '').trim();
+      const y = raw.replace(/\.0+$/, ''); // strip trailing .0 from float-encoded years
       if (y && /^\d{4}$/.test(y)) counts[y] = (counts[y] ?? 0) + 1;
     }
     const data = Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([year, count]) => ({ year, count }));
@@ -219,7 +223,8 @@ export default function UnifiedFilterPanel({
   const masacresChartData = useMemo((): ChartDataset => {
     const counts: Record<string, number> = {};
     for (const m of masacres) {
-      const y = String(m.raw?.['año'] ?? m.raw?.['Año'] ?? m.raw?.['AÑO'] ?? '').trim();
+      const raw = String(m.raw?.['año'] ?? m.raw?.['Año'] ?? m.raw?.['AÑO'] ?? '').trim();
+      const y = raw.replace(/\.0+$/, '');
       if (y && /^\d{4}$/.test(y)) counts[y] = (counts[y] ?? 0) + 1;
     }
     const data = Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([year, count]) => ({ year, count }));

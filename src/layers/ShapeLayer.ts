@@ -78,7 +78,8 @@ function getColorByIndex(layerId: string, index: number): [number, number, numbe
 }
 
 function getBorderColor(fillColor: [number, number, number, number]): [number, number, number, number] {
-  return [fillColor[0], fillColor[1], fillColor[2], 200];
+  // Dark border for maximum contrast regardless of fill color
+  return [20, 20, 20, 200];
 }
 
 // Función para calcular el total de desapariciones según el rango de años
@@ -216,9 +217,9 @@ export function createShapeLayer(
     getFillColor: fillAccessor,
     getLineColor: lineAccessor,
     getLineWidth: 1,
-    lineWidthUnits: 'pixels',   // avoids per-vertex width calculation in world-space
-    lineWidthMinPixels: 1,
-    lineWidthMaxPixels: 2,
+    lineWidthUnits: 'pixels',
+    lineWidthMinPixels: 1.5,
+    lineWidthMaxPixels: 3,
     extruded: false,
     // 2D only — skip depth testing (cheaper render pass)
     parameters: { depthTest: false } as any,    onClick,

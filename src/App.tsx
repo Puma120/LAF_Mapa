@@ -19,7 +19,7 @@ import FosaPopup from './components/FosaPopup';
 import FosaDetailModal from './components/FosaDetailModal';
 import MasacreDetailModal from './components/MasacreDetailModal';
 import MasacrePopup from './components/MasacrePopup';
-import MunicipioPopup, { type MunicipioProperties } from './components/MunicipioPopup';
+import MunicipioPopup, { type MunicipioProperties, buildMunicipioDataset } from './components/MunicipioPopup';
 import LoginModal from './components/LoginModal';
 import AdminPanel, { type UploadedCSV } from './components/AdminPanel';
 import WelcomeScreen from './components/WelcomeScreen';
@@ -40,6 +40,7 @@ import type { FosaRecord } from './hooks/useFosasData';
 import UnifiedFilterPanel, { type UnifiedFilters } from './components/UnifiedFilterPanel';
 import Timeline from './components/Timeline';
 import ModalidadLegend from './components/ModalidadLegend';
+import ChartsModal from './components/ChartsModal';
 import logoLAF from './assets/Logo-LAF-Blanco.png';
 import logoIbero from './assets/Logo-Ibero.png';
 
@@ -72,6 +73,10 @@ function Root() {
   const [showLogin, setShowLogin] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [uploadedCSVs, setUploadedCSVs] = useState<UploadedCSV[]>([]);
+  const [popupChartSource, setPopupChartSource] = useState<{
+    properties: MunicipioProperties;
+    chartType: 'corredor' | 'desap' | 'delito';
+  } | null>(null);
   // Save state before entering info/amozoc mode so we can restore on exit
   const savedStateRef = useRef<{
     activeLayers: string[];
@@ -257,6 +262,38 @@ function Root() {
   });
   const [is3D, setIs3D] = useState<boolean>(false);
   const [yearRange, setYearRange] = useState<[number, number] | null>(null);
+  // Reactive chart data: recomputes whenever yearRange or the selected source changes
+  const popupChartData = useMemo(
+    () => popupChartSource && yearRange
+      ? buildMunicipioDataset(popupChartSource.properties, yearRange, popupChartSource.chartType)
+      : null,
+    [popupChartSource, yearRange]
+  );
+  // Derive the best available chart type for a polygon's properties
+  const deriveChartType = useCallback((props: MunicipioProperties): 'corredor' | 'desap' | 'delito' | null => {
+    if (props._hasDelitoData === true) return 'delito';
+    if (Object.keys(props).some(k => k.startsWith('DPFGE_'))) return 'corredor';
+    if (props._hasDesapData === true) return 'desap';
+    return null;
+  }, []);
+  // Ref so the effect below can read current popupChartSource without triggering itself
+  const popupChartSourceRef = useRef(popupChartSource);
+  popupChartSourceRef.current = popupChartSource;
+  // Auto-update chart when the user clicks a different polygon (only if chart is already open)
+  useEffect(() => {
+    if (!popupChartSourceRef.current) return; // chart not open — do nothing
+    if (selectedFeature?.type !== 'municipio') return;
+    const prev = popupChartSourceRef.current;
+    // Try to keep the same chartType if the new polygon also has it, otherwise fall back
+    const tryType = (t: 'corredor' | 'desap' | 'delito') =>
+      buildMunicipioDataset(selectedFeature.properties, [2000, 2024], t) !== null;
+    const chartType = (prev.chartType && tryType(prev.chartType))
+      ? prev.chartType
+      : deriveChartType(selectedFeature.properties);
+    if (!chartType) return; // no chart data for this polygon
+    setPopupChartSource({ properties: selectedFeature.properties, chartType });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFeature]);
   // Debounced yearRange: only used for the expensive layers useMemo so dragging
   // the slider stays smooth but GPU layer rebuilds happen at most every 100 ms.
   const [debouncedYearRange, setDebouncedYearRange] = useState<[number, number] | null>(null);
@@ -383,10 +420,13 @@ function Root() {
       const hRaw = get(f.raw, ['QUIÉN HIZO EL HALLAZGO','QUIEN HIZO EL HALLAZGO']) || 'Se desconoce';
       // Split compound entries and normalize (same logic as UnifiedFilterPanel)
       const HALL_NORM: Record<string, string> = {
-        'la voz de los desaparecidos': 'La Voz de los desaparecidos',
-        'colectivo la voz de los desaparecidos': 'La Voz de los desaparecidos',
+        'la voz de los desaparecidos': 'Grupo Ciudadano de Búsqueda',
+        'colectivo la voz de los desaparecidos': 'Grupo Ciudadano de Búsqueda',
+        'grupo ciudadano de búsqueda': 'Grupo Ciudadano de Búsqueda',
+        'grupo ciudadano de busqueda': 'Grupo Ciudadano de Búsqueda',
         'familias de personas desaparecidas': 'Familiares',
         'poblador': 'Pobladores',
+        'poblador menor de edad': 'Pobladores',
       };
       const hParts = hRaw.split('.')
         .map((p: string) => p.trim())
@@ -483,7 +523,12 @@ function Root() {
       if (y != null) set.add(y);
     }
     
-    return Array.from(set).sort((a, b) => a - b);
+    const sorted = Array.from(set).sort((a, b) => a - b);
+    if (sorted.length < 2) return sorted;
+    // Fill in any gaps so the timeline shows a continuous range (e.g. 2015, 2016)
+    const full: number[] = [];
+    for (let y = sorted[0]; y <= sorted[sorted.length - 1]; y++) full.push(y);
+    return full;
   }, [fosas, masacres]);
 
   // Initialize timeline year range once years are known
@@ -504,11 +549,9 @@ function Root() {
 
   // Calcular modalidades visibles para la leyenda
   const modalidadesInfo = useMemo(() => {
-    if (filters.modalidad.length === 0) return [];
+    if (filters.modalidad.length === 0 || !filters.showFosas) return [];
     return getModalidadesWithColors(filteredFosas);
-  }, [filteredFosas, filters.modalidad]);
-
-  
+  }, [filteredFosas, filters.modalidad, filters.showFosas]);
   const layers = useMemo(() => {
     // Bounding box de M�xico para limitar las tiles cargadas
     // [west, south, east, north]
@@ -632,25 +675,27 @@ function Root() {
       }
     }
 
-    // Agregar pol�gonos de modalidad si hay filtros activos
+    // Agregar pol�gonos de modalidad si hay filtros activos y la capa está visible
     const modalidadPolygonLayer = createModalidadPolygons(filteredFosas);
-    if (modalidadPolygonLayer && filters.modalidad.length > 0) {
+    if (modalidadPolygonLayer && filters.modalidad.length > 0 && filters.showFosas) {
       baseLayers.push(modalidadPolygonLayer);
     }
 
-    // Pol�gono convex-hull cuando hay cualquier filtro activo (municipio, modalidad, hallazgo o texto)
+    // Polígono convex-hull: uno por tipo, sólo visible cuando su capa está activa
     const hasActiveFilters =
       filters.municipio.length > 0 ||
       filters.modalidad.length > 0 ||
       filters.hallazgo.length > 0 ||
       filters.texto.trim() !== '';
-    if (hasActiveFilters && (filters.showFosas || filters.showMasacres)) {
-      const allFilteredPoints: [number, number][] = [
-        ...(filters.showFosas ? filteredFosas : []).map(f => f.position as [number, number]),
-        ...(filters.showMasacres ? filteredMasacres : []).map(m => m.position as [number, number]),
-      ];
-      const searchPolygonLayer = createSearchPolygon(allFilteredPoints);
-      if (searchPolygonLayer) baseLayers.push(searchPolygonLayer);
+    if (hasActiveFilters && filters.showFosas) {
+      const fosaPoints = filteredFosas.map(f => f.position as [number, number]);
+      const fosaPolygon = createSearchPolygon(fosaPoints);
+      if (fosaPolygon) baseLayers.push(fosaPolygon);
+    }
+    if (hasActiveFilters && filters.showMasacres) {
+      const masacrePoints = filteredMasacres.map(m => m.position as [number, number]);
+      const masacrePolygon = createSearchPolygon(masacrePoints);
+      if (masacrePolygon) baseLayers.push(masacrePolygon);
     }
 
     // Agregar capas de puntos seg�n visibilidad
@@ -926,6 +971,7 @@ function Root() {
             properties={selectedFeature.properties} 
             onClose={() => setSelectedFeature(null)} 
             yearRange={yearRange ?? undefined}
+            onOpenChart={(props, chartType) => setPopupChartSource({ properties: props, chartType })}
           />
         )}
       </DeckGL>
@@ -1134,6 +1180,11 @@ function Root() {
           feature={selectedFeature.rec}
           onClose={() => setShowMasacreDetail(false)}
         />
+      )}
+
+      {/* Popup Chart Modal — lives at root so it persists independently of map popups */}
+      {popupChartData && (
+        <ChartsModal datasets={[popupChartData]} onClose={() => setPopupChartSource(null)} />
       )}
       
     </div>
